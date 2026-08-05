@@ -1,20 +1,144 @@
 # Agent Data Gateway
 
-> 让 Agent 获得可信、完整、可追溯的数据输入。**摄取编排层**，不是又一个 Document Parser。
+<p align="center">
+  <a href="https://github.com/CSlawyer1985/agent-data-gateway/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/version-v0.1.0-brightgreen" alt="Version"></a>
+  <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
+  <br>
+  <b>让 Agent 获得可信、完整、可追溯的数据输入</b>
+  <br>
+  <b>摄取编排层（Agent Ingestion），不是又一个 Document Parser</b>
+  <br>
+  合同 · 证据 · 判决书 · 财务表 · 聊天记录 · 邮件 · 音视频 · 图纸 · 压缩包
+</p>
 
-律师、文字工作者的真实输入是一个格式极杂的数据包：PDF 扫描件、带批注修订的 docx、财务表、聊天记录、邮件及附件、音视频、工程图纸……当前 Agent 最大的问题不是不会分析，而是**无法可靠地知道自己是否已完整读取全部材料**——文件遗漏、压缩包未展开、OCR 未执行、表格读取失败、来源无法追溯。输入不完整，再强的模型也只建立在残缺事实上。
+---
 
-开源生态（MinerU / Docling / Tika / Whisper / PaddleOCR 等）解决的是 **Document Parsing**（怎么把一个文件解析出来）。本工具做 **Agent Ingestion**——怎么把一个案件材料包可靠地变成 Agent 可消费、可追溯、可信的数据。
+> **新用户？** 从 [快速开始](#快速开始) 开始——三个命令跑通一个材料包。本文是完整参考手册。
+>
+> **核心承诺：不假装成功。** 读不了的文件进 `unresolved_items` 并给出原因与建议；本地解决不了的问题显性失败，绝不静默降质。
 
-## 核心能力
+---
 
-- **完整入账**：递归发现 + 压缩包/邮件安全展开，每个文件都有 item 记录或显式排除记录（`all_items_accounted`）。
-- **不可信输入安全模型**：ZIP bomb / 路径穿越 / 符号链接逃逸 / 宏 / PDF JavaScript / worker 资源耗尽——第一版即内置，且所有拦截显性记录。
-- **统一数据模型**：`EvidenceDocument`（三身份 source/rendition/run、八维质量 + fitness 适用性、来源锚点、处理谱系）。Markdown/纯文本只是导出视图。
-- **特征路由 + 降级链**：按文档特征选最优 parser（如 PDF 数字→Docling、扫描→MinerU），不可用时沿降级链回退并记录原因，绝不假装成功。
-- **质量多维化**：一份文件可能可全文检索、可事实提取，但不能可靠引用、不能用于真伪鉴定——`fitness` 旗标如实区分。
-- **摄取 ≠ 取证**：提取技术信号（EXIF、哈希、电子签章线索），但 `authenticity_assessment` 恒为 false，真伪鉴定标注"需人工/鉴定复核"。
-- **隐私保护**：所有产物默认只含包内相对路径，绝对路径只在本地私有日志。
+## 为什么做
+
+律师、文字工作者的真实输入是一个格式极杂的数据包：PDF 扫描件、带批注修订的 docx、财务表、聊天记录、邮件及附件、音视频、工程图纸……
+
+当前 Agent 最大的问题不是不会分析，而是**无法可靠地知道自己是否已完整读取全部材料**：
+
+| 现实问题 | 后果 |
+|---------|------|
+| 文件遗漏（压缩包未展开、附件未拆出） | 分析建立在残缺事实上 |
+| OCR 未执行（扫描件当成空文件） | "无文字层"被误读为"无内容" |
+| 表格读取失败（多工作表、合并单元格） | 关键数字缺失无人知晓 |
+| 解析失败被静默跳过 | 无法区分"读全了"与"读不了" |
+| 来源无法回溯 | 引用时找不到原文位置 |
+| 解析器悄悄换成了低质量兜底 | 报告看起来正常，实际不可引用 |
+
+开源生态（MinerU / Docling / Tika / Whisper / PaddleOCR 等）解决的是 **Document Parsing**——怎么把一个文件解析出来。本工具做 **Agent Ingestion**——怎么把一个案件材料包**可靠地**变成 Agent 可消费、可追溯、可信的数据。
+
+## 当前状态（v0.1.0）
+
+| 维度 | 状态 |
+|------|------|
+| **版本** | v0.1.0（2026-08-05，首次发布） |
+| **编排器核心** | ✅ 完整可用：发现/安全展开/类型识别/特征路由/调度/质量/锚点/谱系/渲染，纯 stdlib |
+| **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
+| **外部 worker** | ✅ 14 个适配器就绪，按环境安装（`adg check` 实测 25/33 可用；docling/mineru 等重型需按环境构建） |
+| **验证矩阵** | ✅ `adg verify` 20/21 通过（1 跳过为环境依赖项） |
+| **真实数据验证** | ✅ input 混合材料包（25 文件 / 13 类型 / 嵌套目录 / 压缩包）：全量入账、覆盖率 79.4%、失败项全部显性化 |
+| **云端扩展** | 📋 设计预留（远程 worker 后端、云端模型路由），未实现 |
+| **Extended Packs** | 📋 规划（CAD 深入/GIS/DICOM 等），未发布 |
+
+已知限制与已知问题见下方「迭代日志」最新条目；全部规格以 `docs/spec/` 与 `models/*.v0.1.json` 为准。
+
+## 目标
+
+1. **完整入账**：包内每个文件都有 item 记录或显式排除记录（`all_items_accounted`），"读全了"是可验证的事实而非感觉。
+2. **失败显性化**：任何文件未能可靠读取，必须带着阶段、原因、建议出现在清单里——Agent 和律师都知道"哪里还没读全"。
+3. **诚实降级**：解析器沿降级链回退时，产物必须携带质量标注（如 `layout=fail`、`quotation=False`），让下游知道"这份内容能检索、但不能可靠引用"。
+4. **本地最优**：默认全链路本地处理，客户材料、律师执业秘密不出本机。
+5. **云端可扩**：本地无解时（无 GPU、缺重型模型、格式无本地 parser），沿显式授权路径扩展云端服务与模型，产物与来源标注规则不变。
+6. **摄取 ≠ 取证**：提取技术信号（EXIF、哈希、电子签章线索），但真伪鉴定恒为 `false`，标注"需人工/鉴定复核"。
+
+## 实现方法
+
+### 架构总览
+
+```
+原始材料包（不可信输入）
+        │
+        ▼
+┌─────────────────────────────────────────────────┐
+│  ADG 编排器（gateway/，纯 stdlib）               │
+│  发现 → 安全展开 → 类型识别 → 特征路由 → 调度      │
+│  → 质量定稿 → 锚点派生 → 谱系记录 → 渲染输出       │
+│                                                   │
+│  ├─ Worker 协议：JSON Lines over stdio（spec 04） │
+│  ├─ 降级链：特征路由 + 诚实回退（spec 08）         │
+│  ├─ 安全模型：ZIP bomb / 路径穿越 / 符号链接 /      │
+│  │            宏 / PDF JS / 资源耗尽（spec 06）    │
+│  └─ 隐私：产物只含包内相对路径（spec 09）           │
+└─────────────────────────────────────────────────┘
+        │
+        ▼
+  EvidenceDocument（统一模型，spec 02）
+  三身份 source/rendition/run + 八维质量 + fitness + 锚点 + 谱系
+```
+
+### 核心机制
+
+| 机制 | 实现 | 解决的问题 |
+|------|------|-----------|
+| **完整入账** | 递归发现 + 压缩包/邮件安全展开，每文件必有 item 或排除记录 | 文件遗漏无人知晓 |
+| **不可信输入安全模型** | ZIP bomb / 路径穿越 / 符号链接逃逸 / 宏 / PDF JavaScript / worker 资源耗尽，第一版即内置，拦截显性记录 | 恶意或损坏材料击穿管线 |
+| **三身份模型** | `source_id`（原件，跨 parser 稳定）/ `rendition_id`（解析产物）/ `run_id`（执行） | parser 升级后结果对比与追溯 |
+| **特征路由 + 降级链** | 按文档特征选最优 parser（如 PDF 数字→Docling、扫描→MinerU、加密→qpdf），不可用沿链回退并记录每级失败原因 | 拿最优工具处理最优场景，失败原因可诊断 |
+| **质量多维化** | 八维质量（发现/类型/文本/版面/OCR/附件/元数据/锚定）+ fitness 五旗标（可检索/可提取/可引用/版面敏感/真伪鉴定） | 一份文件"能检索 ≠ 能引用"如实区分 |
+| **来源锚点** | 元素级定位：页码/坐标/表格单元/时间码/字段，引用可回溯原件 | 结论无法定位到证据位置 |
+| **处理谱系** | 每次解析记录 operation/tool/exit_code/哈希，链式可查 | 产物来源与处理历史不可追溯 |
+| **隐私保护** | 产物默认只含包内相对路径，绝对路径只在本地私有日志；输出前 scrub 兜底清洗 | 客户名、目录结构、磁盘位置不泄露 |
+
+## 格式范围（结合工作实际）
+
+按律师与文字工作者真实材料类型组织。**本地已有的 worker 优先**，标"规划"的为扩展路径。
+
+| 材料类型 | 常见文件 | 本地 worker（`adg check` 验证可用性） | 降级链 / 兜底 |
+|---------|---------|--------------------------------------|--------------|
+| 合同、判决书、证据 PDF | `.pdf`（数字/扫描/加密/混合） | docling、pdfplumber、pypdf、pdf_lite、qpdf（加密）、mineru（扫描 OCR） | 数字简单→Docling→pdfplumber→pypdf→pdf_lite；扫描→MinerU；加密→qpdf |
+| 合同/文书 Word | `.docx`、`.doc` | officecli（含修订/批注全量）、docx_lite、doc_lite | docx→officecli→docling；doc→doc_lite→docling |
+| 案件台账、财务表 | `.xlsx`、`.xls`、`.csv` | xlsx_lite（多工作表+单元格锚点）、xls、csv_lite | xlsx→docling；xls→docling |
+| 演示文稿 | `.pptx`、`.ppt` | pptx_lite、ppt_old（LibreOffice 转换） | pptx→ppt_old→docling |
+| 证据图片、截图、扫描页 | `.png/.jpg/.jpeg/.tif/.bmp/.webp/.psd` | rapidocr（OCR）、image_lite、paddleocr | paddleocr→rapidocr→image_lite |
+| 聊天记录导出 | 微信/QQ 文本导出 | chat_lite（会话/消息结构识别） | — |
+| 邮件及附件 | `.eml`、`.msg`、`.pst` | eml_lite（附件递归回灌）、extract_msg、libpff | 按格式细分链 |
+| 谈话录音、庭审/会议视频 | `.mp3/.wav/.m4a/.mp4/...` | whisper（转录+时间码）、video_frames（抽帧）、av_lite | 视频→抽帧→whisper→av_lite |
+| 工程图纸 | `.dwg`、`.dxf` | libredwg（转 DXF 结构）、dwg_render（位图渲染）、dxf_lite | dwg→libredwg→dwg_render；dxf→ezdxf→dxf_lite |
+| 材料包压缩包 | `.zip`、`.7z` | 安全展开（stdlib zipfile + py7zr） | 展开后成员各自走路由 |
+| 网页/文本 | `.html`、`.txt`、`.md` | trafilatura、html_lite、text_lite | — |
+| 未知格式 | `.caj`、其他 | 显性进 `unresolved_items`，标注原因 | 类型识别失败不假装成功 |
+
+## 本地最优：数据不出本机
+
+律师材料的默认边界：**客户秘密与执业秘密在本地闭环内处理**。
+
+- **worker 隔离**：重/异构解析走独立 venv 或 docker 容器（只读挂载原件、`network=none`、资源限额），不链入编排器；GPL 组件（extract-msg、LibreDWG、MinerU）以独立进程调用，规避许可证传染。
+- **隐私三规则**（spec 09）：产物只出现包内相对路径；绝对路径只进本地私有日志（可 `--no-abs-log` 关闭）；输出前兜底 scrub。
+- **无暗网行为**：worker 默认 `network=false` 禁止外联；需要网络的 enrich 类 worker 必须显式声明并说明用途。
+- **本地能力自查**：`adg check` 一键列出本机 25+ worker 可用性，`adg doctor` 按实际材料诊断缺口，`adg setup` 一键补装。
+
+## 云端扩展：本地无路径时
+
+本地没有解析路径（无 GPU 跑不了重型模型、缺特定依赖、格式无本地 parser、或超大批量需要算力）时，沿以下设计路径扩展云端服务与模型。**扩展不是默认动作——需要显式配置与授权。**
+
+| 扩展点 | 机制 | 状态 |
+|--------|------|------|
+| **远程 worker 后端** | Worker 协议是统一的 JSON Lines over stdio 接口（spec 04），执行后端（docker/subprocess/inproc）是声明式可插拔的——新增 `remote` 后端（SSH/HTTP/云函数）即可把任意解析服务接入降级链，协议与产物规则不变 | 设计预留 |
+| **云端模型路由** | 降级链末端挂 `remote_xxx` 占位：本地链全失败时显性转向云端，产物同样过质量定稿与 fitness 标注 | 设计预留 |
+| **网络声明纪律** | `network=true` 的 worker 必须说明用途；涉密材料默认禁止外发，云端路径需用户显式授权 | 已内置 |
+| **结果回灌一致性** | 云端产物回灌后走同一套锚点派生、哈希、谱系记录——来源是本地还是云端不影响模型与追溯规则 | 已内置 |
+
+**云端扩展的隐私边界**：涉及客户秘密、执业秘密的材料，默认不配置云端路径；确需云端的，由用户在材料包级别显式开启，并承担相应合规判断。
 
 ## 安装
 
@@ -64,10 +188,21 @@ agent-data-gateway/
 2. **失败显性化**——不假装成功。读不了的文件进 `unresolved_items` 并给原因与建议。
 3. **诚实降级**——lite parser / 兜底产物必须带降级质量标注（如 pdflite：无版面坐标、锚点近似）。
 4. **范围分三层**——Core + Legal Pack 进主仓库测试矩阵；CAD/GIS/DICOM 等属 Extended Packs，独立扩展。
+5. **本地最优、云端可扩**——本地能解决的绝不上云；本地无解时沿显式授权路径扩展，产物规则不变。
 
 ## 规范文档
 
 `docs/spec/` 下 00-09 是权威说明；`models/*.v0.1.json` 是机器可读 Schema（normative，冲突时以 Schema 为准）。
+
+## 迭代日志
+
+> **自动同步约定**：每次迭代（功能新增、缺陷修复、验证结果）完成后，由 Claude 自动在本节追加条目并推送。条目格式：`日期 | 版本 | 类型 | 要点`。历史详情见 `CHANGELOG.md`。
+
+| 日期 | 版本 | 类型 | 要点 |
+|------|------|------|------|
+| 2026-08-05 | v0.1.0 | 初始发布 | 编排器核心 + Legal Pack + 14 worker 适配器 + 10 份 spec + 验证矩阵 |
+| 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
+| 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |
 
 ## 许可证
 

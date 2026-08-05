@@ -25,6 +25,9 @@ adg-verify-*/
 input/
 *.local
 
+# 本地 harness（迭代纪律等，不随仓库分发）
+.claude/
+
 # IDE
 .idea/
 .vscode/
