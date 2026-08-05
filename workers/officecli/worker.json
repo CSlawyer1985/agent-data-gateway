@@ -1,0 +1,12 @@
+{
+  "name": "officecli",
+  "version": "0.1.0",
+  "handles": [{"kind": "docx", "role": "parse"}],
+  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_command": ["officecli", "--version"]},
+  "python_requires": [],
+  "weight": "light",
+  "maturity": "experimental",
+  "license": "Apache-2.0",
+  "notes": "docx 批注/修订多轨增强（officecli query comment/revision）。本机已装 officecli 时即刻可用。输出格式需实测校准——首次使用后用 adg verify 验证。"
+}

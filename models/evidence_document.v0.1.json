@@ -1,0 +1,322 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-data-gateway.dev/models/evidence_document.v0.1.json",
+  "title": "EvidenceDocument v0.1",
+  "description": "Agent Data Gateway 统一结构化文档对象。Markdown/纯文本只是导出视图之一。规范说明见 docs/spec/02-evidence-document.md。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "source_id",
+    "rendition_id",
+    "run_id",
+    "source",
+    "parser",
+    "provenance",
+    "content",
+    "annotations",
+    "quality",
+    "lineage",
+    "integrity"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1",
+      "description": "模型版本。破坏性变更升级 minor/major，additive 变更升级 patch。"
+    },
+    "source_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "原始文件字节哈希。原始证据身份，永久稳定，与 parser 无关。document_id 等于 source_id。"
+    },
+    "rendition_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "本解析产物规范化哈希（content+annotations+provenance 的 canonical JSON 的 sha256）。同一 source_id 可有多个 rendition。"
+    },
+    "run_id": {
+      "type": "string",
+      "pattern": "^uuid:[0-9a-f-]{36}$",
+      "description": "本次处理任务唯一 ID（一次 adg parse 调用）。"
+    },
+    "source": {
+      "type": "object",
+      "required": ["package_relative_path", "detected_type", "bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "package_relative_path": {
+          "type": "string",
+          "description": "隐私安全路径。顶层文件为包内相对路径（如 input/证据三/合同.pdf）；容器成员为 容器路径::成员路径（如 bundle.zip::内层/a.pdf）。禁止绝对路径。"
+        },
+        "detected_type": {
+          "type": "object",
+          "required": ["mime", "magic", "method"],
+          "additionalProperties": false,
+          "properties": {
+            "mime": {"type": "string"},
+            "magic": {"type": "string", "description": "魔数签名摘要，如 %PDF、PK\\x03\\x04、MZ"},
+            "method": {"type": "string", "enum": ["adg-magic", "tika", "extension-fallback", "container-derived"]},
+            "confidence": {"type": "string", "enum": ["high", "medium", "low"]}
+          }
+        },
+        "bytes": {"type": "integer", "minimum": 0},
+        "mtime": {"type": "string", "description": "ISO 8601；容器成员可缺省"},
+        "origin": {
+          "type": ["object", "null"],
+          "description": "容器来源。顶层文件为 null。",
+          "required": ["container_source_id", "container_kind", "container_path", "depth"],
+          "additionalProperties": false,
+          "properties": {
+            "container_source_id": {"type": "string"},
+            "container_kind": {"type": "string", "enum": ["archive", "email", "office-embed", "transform"]},
+            "container_path": {"type": "string", "description": "如 bundle.zip::dir/a.pdf 或 msg::part2/report.pdf"},
+            "depth": {"type": "integer", "minimum": 1}
+          }
+        },
+        "derived_from": {
+          "type": ["object", "null"],
+          "description": "转换来源（如 dwg→dxf、ffmpeg 提取音频）。与 origin 互斥使用场景：origin 指容器拆出，derived_from 指格式转换。",
+          "required": ["source_id", "tool"],
+          "additionalProperties": false,
+          "properties": {
+            "source_id": {"type": "string"},
+            "tool": {"type": "string"},
+            "note": {"type": "string"}
+          }
+        }
+      }
+    },
+    "parser": {
+      "type": "object",
+      "required": ["name", "version", "worker_id", "fell_back_from"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {"type": "string"},
+        "version": {"type": "string"},
+        "worker_id": {"type": "string", "description": "执行实例标识，如 mineru-001、inproc:pdf_lite"},
+        "fell_back_from": {
+          "type": ["array", "null"],
+          "description": "降级链：本 rendition 是第几次尝试的产物。元素为 {name, version, reason}。首选 parser 为 null。",
+          "items": {
+            "type": "object",
+            "required": ["name", "reason"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "version": {"type": "string"},
+              "reason": {"type": "string", "enum": ["unavailable", "hardware_unmet", "timeout", "error", "rejected_by_preflight", "low_quality"]}
+            }
+          }
+        }
+      }
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["coordinate_system"],
+      "additionalProperties": false,
+      "properties": {
+        "coordinate_system": {
+          "type": "object",
+          "required": ["name", "units"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string", "description": "如 page_bbox / paragraph / cell / message / timecode / entity / row / stream"},
+            "units": {"type": "string", "description": "如 0-1000（归一化）/ pt / px / index / seconds"},
+            "origin": {"type": "string", "description": "如 top-left；非坐标类定位器可省略"}
+          }
+        }
+      }
+    },
+    "content": {
+      "type": "object",
+      "required": ["blocks"],
+      "additionalProperties": false,
+      "properties": {
+        "blocks": {
+          "type": "array",
+          "description": "结构化内容块。PDF/图像用 page 块；docx/文本用 section 块；表格用 sheet 块；聊天用 message_group 块；音视频用 segment 块。",
+          "items": {
+            "type": "object",
+            "required": ["block_type", "index", "elements"],
+            "additionalProperties": false,
+            "properties": {
+              "block_type": {"type": "string", "enum": ["page", "section", "sheet", "message_group", "segment", "header", "footer", "attachment_list", "stream"]},
+              "index": {"type": "integer", "minimum": 0},
+              "label": {"type": "string", "description": "如 sheet 名、页码标签"},
+              "elements": {
+                "type": "array",
+                "items": {"$ref": "#/$defs/element"}
+              }
+            }
+          }
+        }
+      }
+    },
+    "annotations": {
+      "type": "object",
+      "required": ["comments", "revisions", "ocr_boxes", "seals", "embedded_objects", "alternative_renditions"],
+      "additionalProperties": false,
+      "properties": {
+        "comments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "text"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string"},
+              "author": {"type": ["string", "null"]},
+              "date": {"type": ["string", "null"]},
+              "text": {"type": "string"},
+              "anchor_element_id": {"type": ["string", "null"]},
+              "resolved": {"type": ["boolean", "null"]},
+              "thread": {"type": ["array", "null"], "items": {"type": "object"}}
+            }
+          }
+        },
+        "revisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["id", "kind"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {"type": "string"},
+              "kind": {"type": "string", "enum": ["insert", "delete", "move", "format", "other"]},
+              "author": {"type": ["string", "null"]},
+              "date": {"type": ["string", "null"]},
+              "text": {"type": ["string", "null"]},
+              "anchor_element_id": {"type": ["string", "null"]}
+            }
+          }
+        },
+        "ocr_boxes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["text", "bbox"],
+            "additionalProperties": false,
+            "properties": {
+              "text": {"type": "string"},
+              "bbox": {"type": "array", "items": {"type": "number"}, "minItems": 4, "maxItems": 4},
+              "confidence": {"type": ["number", "null"]},
+              "page_index": {"type": ["integer", "null"]}
+            }
+          }
+        },
+        "seals": {
+          "type": "array",
+          "description": "印章信号（技术线索，需人工/鉴定复核；MVP 预留，由 enrichment plugin 提供）",
+          "items": {"type": "object"}
+        },
+        "embedded_objects": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name"],
+            "additionalProperties": false,
+            "properties": {
+              "name": {"type": "string"},
+              "mime": {"type": ["string", "null"]},
+              "bytes": {"type": ["integer", "null"]},
+              "child_source_id": {"type": ["string", "null"], "description": "若已递归回灌为独立 item"}
+            }
+          }
+        },
+        "alternative_renditions": {
+          "type": "array",
+          "description": "同一 source_id 的其他 rendition_id 列表（由编排器维护）",
+          "items": {"type": "string"}
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "required": ["overall", "discovery", "type_detection", "text_extraction", "layout_preservation", "ocr", "attachments", "metadata", "source_anchoring", "fitness"],
+      "additionalProperties": false,
+      "properties": {
+        "overall": {"type": "string", "enum": ["pass", "pass_with_warnings", "fail"]},
+        "discovery": {"$ref": "#/$defs/dim"},
+        "type_detection": {"$ref": "#/$defs/dim"},
+        "text_extraction": {"$ref": "#/$defs/dim"},
+        "layout_preservation": {"$ref": "#/$defs/dim"},
+        "ocr": {"$ref": "#/$defs/dim"},
+        "attachments": {"$ref": "#/$defs/dim"},
+        "metadata": {"$ref": "#/$defs/dim"},
+        "source_anchoring": {"$ref": "#/$defs/dim"},
+        "fitness": {
+          "type": "object",
+          "required": ["fulltext_search", "fact_extraction", "quotation", "layout_sensitive_analysis", "authenticity_assessment"],
+          "additionalProperties": false,
+          "properties": {
+            "fulltext_search": {"type": "boolean"},
+            "fact_extraction": {"type": "boolean"},
+            "quotation": {"type": "boolean", "description": "可可靠引用（锚点可回溯原件）"},
+            "layout_sensitive_analysis": {"type": "boolean"},
+            "authenticity_assessment": {"type": "boolean", "description": "恒为 false——摄取≠取证，真伪鉴定需人工/鉴定复核"}
+          }
+        },
+        "notes": {"type": "array", "items": {"type": "string"}}
+      }
+    },
+    "lineage": {
+      "type": "array",
+      "description": "处理谱系：每次转换一条。回答：这份文本谁提取的、哪个版本、是否经 OCR、结果为何变化。",
+      "items": {
+        "type": "object",
+        "required": ["operation", "input_sha256", "output_sha256", "tool", "tool_version", "started_at", "finished_at", "exit_code", "warnings"],
+        "additionalProperties": false,
+        "properties": {
+          "operation": {"type": "string", "description": "如 parse / ocr / transform / expand / transcribe"},
+          "input_sha256": {"type": "string"},
+          "output_sha256": {"type": "string"},
+          "tool": {"type": "string"},
+          "tool_version": {"type": "string"},
+          "model_version": {"type": ["string", "null"]},
+          "config_hash": {"type": ["string", "null"]},
+          "started_at": {"type": "string"},
+          "finished_at": {"type": "string"},
+          "exit_code": {"type": "integer"},
+          "warnings": {"type": "array", "items": {"type": "string"}}
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": ["payload_sha256", "source_sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "payload_sha256": {"type": "string", "description": "除本字段外全文档 canonical JSON 的 sha256，自校验"},
+        "source_sha256": {"type": "string", "description": "与 source_id 的哈希部分一致，冗余校验位"}
+      }
+    }
+  },
+  "$defs": {
+    "dim": {
+      "type": "string",
+      "enum": ["pass", "warning", "fail", "unknown"],
+      "description": "质量子维度取值，聚合规则见 models/quality_dimensions.v0.1.json"
+    },
+    "element": {
+      "type": "object",
+      "required": ["id", "type", "locator"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^el_[0-9a-f]{12}$", "description": "确定性元素 ID：同 parser/版本/配置下可重复（L2 层稳定性）"},
+        "type": {"type": "string", "description": "paragraph/heading/table/cell_row/image/message/segment_text/entity/field 等"},
+        "text": {"type": ["string", "null"]},
+        "locator": {
+          "type": "object",
+          "required": ["system"],
+          "additionalProperties": true,
+          "properties": {
+            "system": {"type": "string", "enum": ["page_bbox", "paragraph", "cell", "message", "timecode", "entity", "row", "stream", "field"]}
+          },
+          "description": "定位器。page_bbox:{page,bbox}；paragraph:{index}；cell:{sheet,cell}；message:{id,timestamp?}；timecode:{start,end}；entity:{handle?,layer?}；row:{index}；stream:{index}（pdflite 近似）；field:{name}"
+        },
+        "attrs": {"type": "object", "additionalProperties": true, "description": "类型相关属性：bold/style/cells/duration/sender 等"}
+      }
+    }
+  }
+}

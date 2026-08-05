@@ -1,0 +1,12 @@
+{
+  "name": "trafilatura",
+  "version": "0.1.0",
+  "handles": [{"kind": "html", "role": "parse"}],
+  "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "trafilatura"},
+  "python_requires": ["trafilatura"],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "Apache-2.0",
+  "notes": "HTML 正文提取首选（boilerplate 去除、正文识别）。"
+}

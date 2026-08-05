@@ -1,0 +1,141 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-data-gateway.dev/models/worker_protocol.v0.1.json",
+  "title": "ADG Worker Protocol v0.1",
+  "description": "编排器与 parser worker 之间的统一协议：JSON Lines over stdio。每行一个 JSON 对象。规范说明见 docs/spec/04-worker-protocol.md。",
+  "type": "object",
+  "definitions": {
+    "capabilities_request": {
+      "type": "object",
+      "required": ["protocol_version", "type"],
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {"type": "string", "const": "0.1"},
+        "type": {"type": "string", "const": "capabilities_request"}
+      }
+    },
+    "capabilities": {
+      "type": "object",
+      "required": ["type", "worker", "handles", "requirements"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"type": "string", "const": "capabilities"},
+        "protocol_version": {"type": "string"},
+        "worker": {
+          "type": "object",
+          "required": ["name", "version"],
+          "additionalProperties": false,
+          "properties": {
+            "name": {"type": "string"},
+            "version": {"type": "string"},
+            "maturity": {"type": "string", "enum": ["stable", "implemented", "experimental"]},
+            "license": {"type": ["string", "null"]}
+          }
+        },
+        "handles": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["kind"],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {"type": "string"},
+              "formats": {"type": ["array", "null"], "items": {"type": "string"}},
+              "role": {"type": "string", "enum": ["parse", "transform", "enrich"], "description": "parse=产出 EvidenceDocument 片段；transform=输入一种格式输出另一种（如 dwg→dxf）；enrich=补充元数据/信号"}
+            }
+          }
+        },
+        "requirements": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "min_ram_mb": {"type": ["integer", "null"]},
+            "gpu": {"type": ["string", "null"], "enum": ["required", "optional", "none", null]},
+            "backend": {"type": "array", "items": {"type": "string", "enum": ["docker", "podman", "subprocess"]}},
+            "network": {"type": "boolean", "description": "worker 是否需要外网（默认 false；true 时必须在 worker.json 中说明用途）"}
+          }
+        }
+      }
+    },
+    "parse_request": {
+      "type": "object",
+      "required": ["protocol_version", "type", "job_id", "source_path", "source_id", "kind", "work_dir"],
+      "additionalProperties": false,
+      "properties": {
+        "protocol_version": {"type": "string", "const": "0.1"},
+        "type": {"type": "string", "const": "parse_request"},
+        "job_id": {"type": "string"},
+        "source_path": {"type": "string", "description": "worker 可见的原件路径（容器内为只读挂载路径）"},
+        "source_id": {"type": "string"},
+        "kind": {"type": "string"},
+        "format": {"type": ["string", "null"]},
+        "options": {"type": "object", "additionalProperties": true},
+        "limits": {
+          "type": ["object", "null"],
+          "additionalProperties": true,
+          "description": "资源与安全限制提示（编排器同时在沙箱层强制执行）"
+        },
+        "work_dir": {"type": "string", "description": "worker 可写目录；大产物写文件后在 parse_result 中给路径"}
+      }
+    },
+    "progress": {
+      "type": "object",
+      "required": ["type", "job_id"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"type": "string", "const": "progress"},
+        "job_id": {"type": "string"},
+        "pct": {"type": ["number", "null"]},
+        "stage": {"type": ["string", "null"]}
+      }
+    },
+    "parse_result": {
+      "type": "object",
+      "required": ["type", "job_id", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "type": {"type": "string", "const": "parse_result"},
+        "job_id": {"type": "string"},
+        "status": {"type": "string", "enum": ["ok", "failed", "unavailable"]},
+        "fragment": {
+          "type": ["object", "null"],
+          "description": "小产物内联：EvidenceDocument 片段（content/annotations/quality 建议值/warnings）。编排器负责补齐身份、锚点 ID、谱系与完整性字段。",
+          "additionalProperties": true
+        },
+        "fragment_path": {"type": ["string", "null"], "description": "大产物：worker 写入 work_dir 的片段 JSON 路径，与 fragment 二选一"},
+        "output_files": {
+          "type": ["array", "null"],
+          "description": "transform 类 worker 的产出文件（相对 work_dir 路径 + 声明格式）",
+          "items": {
+            "type": "object",
+            "required": ["path", "format"],
+            "additionalProperties": false,
+            "properties": {
+              "path": {"type": "string"},
+              "format": {"type": "string"},
+              "note": {"type": ["string", "null"]}
+            }
+          }
+        },
+        "warnings": {"type": ["array", "null"], "items": {"type": "string"}},
+        "error": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "required": ["kind", "message"],
+          "properties": {
+            "kind": {"type": "string", "enum": ["crash", "timeout", "dependency_missing", "unsupported", "rejected", "resource_limit"]},
+            "message": {"type": "string"}
+          }
+        },
+        "metrics": {"type": ["object", "null"], "additionalProperties": true}
+      }
+    }
+  },
+  "oneOf": [
+    {"$ref": "#/definitions/capabilities_request"},
+    {"$ref": "#/definitions/capabilities"},
+    {"$ref": "#/definitions/parse_request"},
+    {"$ref": "#/definitions/progress"},
+    {"$ref": "#/definitions/parse_result"}
+  ]
+}

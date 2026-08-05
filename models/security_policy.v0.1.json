@@ -1,0 +1,69 @@
+{
+  "schema_version": "0.1",
+  "doc": "不可信文件安全策略（规范数据，gateway/security.py 直接加载执行）。说明文档：docs/spec/06-security-policy.md。案件材料本质是不可信输入，本策略第一版即内置。",
+  "archive": {
+    "max_depth": 8,
+    "max_members": 100000,
+    "max_total_uncompressed_bytes": 53687091200,
+    "max_compression_ratio": 200,
+    "max_single_member_bytes": 2147483648,
+    "deny_path_traversal": true,
+    "deny_symlink_escape": true,
+    "deny_absolute_paths": true,
+    "deny_device_files": true,
+    "encrypted_members": "mark_and_skip",
+    "comment": "max_total_uncompressed_bytes = 50GB；压缩比按成员逐一检查并对超大成员单独限制"
+  },
+  "worker_sandbox": {
+    "default_backend": "docker",
+    "fallback_backend": "subprocess",
+    "docker": {
+      "read_only_root": true,
+      "mount_source_read_only": true,
+      "network": "none",
+      "memory_limit_mb": 8192,
+      "cpus": 4,
+      "pids_limit": 256,
+      "tmpfs_work_dir": true,
+      "drop_capabilities": ["ALL"],
+      "no_new_privileges": true,
+      "auto_remove": true
+    },
+    "subprocess": {
+      "timeout_seconds": 1800,
+      "max_output_bytes": 67108864,
+      "isolated_work_dir": true,
+      "cleanup_on_exit": true,
+      "env_passthrough": ["PATH", "HOME", "LANG", "LC_ALL", "TZ"],
+      "comment": "subprocess 是兼容降级形态，隔离强度低于容器；worker.json 声明 network=true 的 worker 禁止在 subprocess 下运行"
+    }
+  },
+  "parser_limits": {
+    "text_max_bytes": 536870912,
+    "html_max_bytes": 134217728,
+    "spreadsheet_max_cells": 2000000,
+    "csv_max_rows": 5000000,
+    "email_max_attachment_bytes": 536870912,
+    "email_max_attachments": 500,
+    "chat_max_messages": 2000000,
+    "pdf_max_pages_preflight": 20000,
+    "image_max_pixels": 200000000,
+    "docx_max_paragraphs": 500000,
+    "xml_max_entity_expansion_bytes": 10485760,
+    "comment": "超限不崩溃：截断 + warning + 记录 truncated；结构化上限优先于内存保护"
+  },
+  "active_content": {
+    "office_macro": "detect_and_flag",
+    "pdf_javascript": "detect_and_flag",
+    "html_external_requests": "strip_on_render_never_fetch",
+    "embedded_executables": "mark_and_refuse_parse",
+    "comment": "编排器与 lite parser 永不执行文件内活动内容；检测信号写入 quality.notes 与 metadata"
+  },
+  "privacy": {
+    "outputs_use_package_relative_path_only": true,
+    "absolute_path_log_enabled": true,
+    "absolute_path_log_location": "<out>/logs/",
+    "allow_disable_absolute_path_log": true,
+    "comment": "默认只输出 package_relative_path；真实绝对路径只保留在本地私有运行日志，且允许 --no-abs-log 关闭"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "name": "dwg_render",
+  "version": "0.1.0",
+  "handles": [{"kind": "dwg", "role": "transform"}],
+  "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "probe_command": ["dwgbmp", "--help"]},
+  "python_requires": [],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "GPL-3.0（LibreDWG 二进制调用，隔离进程）",
+  "notes": "LibreDWG dwgbmp 把 dwg 渲染为位图（BMP），回灌走 image 链 OCR 出图纸文字标注。律师看不懂 DXF 文本，渲染成图才能看懂图纸内容。与 libredwg(转dxf) 并行：dxf 给结构数据，bmp 给可视化+标注文字。"
+}

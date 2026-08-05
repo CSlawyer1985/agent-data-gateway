@@ -1,0 +1,12 @@
+{
+  "name": "pdfplumber",
+  "version": "0.1.0",
+  "handles": [{"kind": "pdf", "role": "parse"}],
+  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "pdfplumber"},
+  "python_requires": ["pdfplumber"],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "MIT",
+  "notes": "pdfplumber 提取 PDF 文本 + 表格（表格作为 table 元素，保留行列结构）。建工/合同 PDF 多含表格，比 pypdf 的纯文本更强。页级 + 表格单元格锚点。"
+}

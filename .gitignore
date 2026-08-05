@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# ADG 输出（三层目录契约：input 只读，产物去 output）
+adg-output/
+output/
+scratch/
+**/expanded/
+**/documents/
+**/work/
+**/logs/
+
+# 测试与自检临时产物
+.pytest_cache/
+.coverage
+adg-verify-*/
+
+# 用户材料（永不提交）
+input/
+*.local
+
+# IDE
+.idea/
+.vscode/
+.DS_Store

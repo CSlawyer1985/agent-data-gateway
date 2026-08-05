@@ -1,0 +1,12 @@
+{
+  "name": "video_frames",
+  "version": "0.1.0",
+  "handles": [{"kind": "video", "role": "transform"}],
+  "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "probe_command": ["ffmpeg", "-version"]},
+  "python_requires": [],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "LGPL-2.1（FFmpeg 二进制调用）",
+  "notes": "FFmpeg 抽视频关键帧→JPG（transform）。证据视频的关键信息常在画面（现场录像），不只语音。抽出的帧回灌走 image 链（OCR/视觉）。与 whisper(语音转写) 互补：画面+语音两路。options.interval_sec 调整间隔（默认按时长自适应 3-8 帧）。"
+}

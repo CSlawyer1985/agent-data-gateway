@@ -1,0 +1,12 @@
+{
+  "name": "tika",
+  "version": "0.1.0",
+  "handles": [{"kind": "unknown", "role": "enrich"}, {"kind": "database", "role": "enrich"}],
+  "requirements": {"min_ram_mb": 2048, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv"},
+  "python_requires": [],
+  "weight": "heavy",
+  "maturity": "experimental",
+  "license": "Apache-2.0",
+  "notes": "Apache Tika 类型/元数据增强（需 Java + tika-server JAR，环境变量 ADG_TIKA_JAR 指向）。MVP 阶段类型识别由 gateway/magic.py（stdlib）承担，本 worker 为可选增强。"
+}

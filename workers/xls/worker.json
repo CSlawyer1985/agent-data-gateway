@@ -1,0 +1,12 @@
+{
+  "name": "xls",
+  "version": "0.1.0",
+  "handles": [{"kind": "xls", "role": "parse"}],
+  "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "xlrd"},
+  "python_requires": ["xlrd==2.0.1"],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "BSD-3",
+  "notes": "老 .xls（OLE2 + BIFF）解析。xlrd 2.x 专做 .xls（已移除 xlsx 支持）。建工案件结算/预算表常见此格式。单元格锚点 sheet+A1。"
+}

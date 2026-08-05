@@ -1,0 +1,12 @@
+{
+  "name": "py7zr",
+  "version": "0.1.0",
+  "handles": [{"kind": "archive", "formats": ["7z"], "role": "transform"}],
+  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "py7zr"},
+  "python_requires": ["py7zr"],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "LGPL-2.1",
+  "notes": "7z 压缩包安全展开（scan 阶段经 archive_expanders 调用）。rar 需系统 unrar/rarfile，不在本 worker。"
+}

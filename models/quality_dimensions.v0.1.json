@@ -1,0 +1,67 @@
+{
+  "schema_version": "0.1",
+  "doc": "质量模型受控词表与聚合规则（规范数据，gateway/quality.py 直接加载执行）。说明文档：docs/spec/05-quality-model.md",
+  "overall_values": ["pass", "pass_with_warnings", "fail"],
+  "dimension_values": ["pass", "warning", "fail", "unknown"],
+  "dimensions": {
+    "discovery": {
+      "description": "文件是否被完整发现（含容器成员递归）",
+      "expected_for": ["*"]
+    },
+    "type_detection": {
+      "description": "类型识别置信度：魔数与扩展名一致性、检测方法",
+      "expected_for": ["*"]
+    },
+    "text_extraction": {
+      "description": "文本内容是否被提取（对不含文本的 kind 可为 unknown 且不压级）",
+      "expected_for": ["pdf", "docx", "xlsx", "csv", "text", "html", "email", "chat", "audio", "video", "presentation", "dxf", "image"]
+    },
+    "layout_preservation": {
+      "description": "版面/结构信息保留程度（坐标、表格结构、分页、图层）",
+      "expected_for": ["pdf", "docx", "xlsx", "image", "presentation", "dxf"]
+    },
+    "ocr": {
+      "description": "OCR 是否执行及质量（对无 OCR 需求的 kind 不期望）",
+      "expected_for": ["image"]
+    },
+    "attachments": {
+      "description": "附件/嵌入对象是否完整递归回灌",
+      "expected_for": ["email", "docx", "archive"]
+    },
+    "metadata": {
+      "description": "元数据（作者、时间、EXIF、邮件头、哈希）提取程度",
+      "expected_for": ["*"]
+    },
+    "source_anchoring": {
+      "description": "元素能否定位回原件（页/坐标/段落/单元格/时间码/消息 ID）",
+      "expected_for": ["pdf", "docx", "xlsx", "csv", "image", "email", "chat", "audio", "video", "dxf", "text", "html"]
+    }
+  },
+  "aggregation": {
+    "fail_rule": "任一 expected 维度 = fail → overall = fail",
+    "warning_rule": "无 fail；任一 expected 维度 = warning 或 unknown → overall = pass_with_warnings",
+    "pass_rule": "全部 expected 维度 = pass（非 expected 维度不参与聚合）"
+  },
+  "fitness": {
+    "fulltext_search": {
+      "description": "可用于全文检索（有足够文本且编码可读）"
+    },
+    "fact_extraction": {
+      "description": "可用于事实提取（文本可信、结构完整度足够支撑信息抽取）"
+    },
+    "quotation": {
+      "description": "可可靠引用：元素锚点可回溯原件位置，引用时可给出出处"
+    },
+    "layout_sensitive_analysis": {
+      "description": "可支撑版面敏感分析（表格还原、多栏顺序、印章位置、图层）"
+    },
+    "authenticity_assessment": {
+      "description": "可用于真伪鉴定。恒为 false——摄取≠取证，技术信号只是线索，需人工/鉴定复核"
+    }
+  },
+  "reliably_read_rule": "存在至少一个 rendition：quality.overall ∈ {pass, pass_with_warnings} 且 quality.fitness.fact_extraction = true",
+  "notes": [
+    "unknown 的双重语义：'该 kind 不需要此维度'（不压级）与'需要但未执行'（压级）。expected_for 区分二者。",
+    "单项解析产物（rendition）的质量由 parser 建议值 + 编排器规则共同定稿，编排器拥有最终判定权。"
+  ]
+}

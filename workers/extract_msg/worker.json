@@ -1,0 +1,12 @@
+{
+  "name": "extract_msg",
+  "version": "0.1.0",
+  "handles": [{"kind": "email", "formats": ["msg"], "role": "parse"}],
+  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "extract_msg"},
+  "python_requires": ["extract-msg"],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "GPL-3.0（隔离进程使用，不链入编排器）",
+  "notes": "Outlook .msg 解析。附件回灌为独立 item。"
+}

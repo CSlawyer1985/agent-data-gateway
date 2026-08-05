@@ -1,0 +1,12 @@
+{
+  "name": "qpdf",
+  "version": "0.1.0",
+  "handles": [{"kind": "pdf", "role": "transform"}],
+  "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_command": ["qpdf", "--version"]},
+  "python_requires": [],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "Apache-2.0",
+  "notes": "加密 PDF 解密（options.password 提供密码；无密码返回 needs_password 指引）。解密产物回灌走 PDF 解析链。"
+}

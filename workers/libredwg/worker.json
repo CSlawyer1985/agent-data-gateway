@@ -1,0 +1,12 @@
+{
+  "name": "libredwg",
+  "version": "0.1.0",
+  "handles": [{"kind": "dwg", "role": "transform"}],
+  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_command": ["dwg2dxf", "--version"]},
+  "python_requires": [],
+  "weight": "heavy",
+  "maturity": "experimental",
+  "license": "GPL-3.0（二进制调用，隔离进程）",
+  "notes": "dwg → dxf 转换（LibreDWG dwg2dxf），产物走 dxf 解析链。rvt 不支持（unsupported）。macOS: brew install libredwg。"
+}

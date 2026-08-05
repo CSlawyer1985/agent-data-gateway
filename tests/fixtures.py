@@ -1,0 +1,25 @@
+"""复用 selftest 的程序化 fixtures（单一来源，避免重复维护）。"""
+
+from gateway.selftest import (  # noqa: F401
+    PACKAGE_FILES,
+    THREAT_FILES,
+    build_package,
+    make_chat_whatsapp,
+    make_docx,
+    make_dxf,
+    make_eml,
+    make_html,
+    make_jpeg_exif,
+    make_pdf_corrupt,
+    make_pdf_digital,
+    make_pdf_encrypted,
+    make_pdf_scanned,
+    make_png,
+    make_wav,
+    make_xlsx,
+    make_zip_bomb,
+    make_zip_broken,
+    make_zip_normal,
+    make_zip_symlink,
+    make_zip_traversal,
+)

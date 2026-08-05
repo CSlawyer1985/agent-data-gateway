@@ -1,0 +1,12 @@
+{
+  "name": "whisper",
+  "version": "0.1.0",
+  "handles": [{"kind": "audio", "role": "parse"}, {"kind": "video", "role": "parse"}],
+  "requirements": {"min_ram_mb": 4096, "gpu": "optional", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "faster_whisper", "probe_command": ["ffmpeg", "-version"]},
+  "python_requires": ["faster-whisper"],
+  "weight": "heavy",
+  "maturity": "implemented",
+  "license": "MIT",
+  "notes": "音视频转写 + 时间码锚点。options: {\"model\": \"small\", \"language\": \"zh\", \"diarize\": false}。模型首次下载需外网（安装阶段完成）。说话人分离需另装 pyannote（options.diarize=true 时启用，未装则记录 warning）。有损转写：产物标注需对照原件核验。"
+}

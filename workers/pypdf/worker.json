@@ -1,0 +1,12 @@
+{
+  "name": "pypdf",
+  "version": "0.1.0",
+  "handles": [{"kind": "pdf", "role": "parse"}],
+  "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "pypdf"},
+  "python_requires": ["pypdf"],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "BSD-3",
+  "notes": "轻量 PDF 文本提取（纯 Python）。数字简单 PDF 的第二选择：快、无 OCR 噪声，但无坐标、无版面。"
+}

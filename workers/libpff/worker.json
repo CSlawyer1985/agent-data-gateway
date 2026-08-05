@@ -1,0 +1,12 @@
+{
+  "name": "libpff",
+  "version": "0.1.0",
+  "handles": [{"kind": "email", "formats": ["pst", "ost"], "role": "transform"}],
+  "requirements": {"min_ram_mb": 2048, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_command": ["pffexport", "-V"]},
+  "python_requires": [],
+  "weight": "heavy",
+  "maturity": "experimental",
+  "license": "LGPL-3.0（二进制调用）",
+  "notes": "pst/ost → eml 导出（libpff 的 pffexport），产物回灌为 eml item 走 eml_lite。macOS: brew install libpff（无此包时参考 workers/libpff/README）。"
+}

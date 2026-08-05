@@ -1,0 +1,40 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-data-gateway"
+version = "0.1.0"
+description = "Agent Data Gateway — 让 Agent 获得可信、完整、可追溯的数据输入（摄取编排层，不是 parser）"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "ADG" }]
+keywords = ["ingestion", "agent", "evidence", "legal", "pdf", "docx", "ocr"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Topic :: Text Processing",
+]
+# 编排器零硬依赖（纯 stdlib）。重/异构解析走独立隔离 worker。
+dependencies = []
+
+[project.optional-dependencies]
+# 各 worker 的可选依赖；adg setup 默认建独立 venv，这里仅供一键安装进当前解释器
+pdf = ["pypdf"]
+html = ["trafilatura"]
+dxf = ["ezdxf"]
+email = ["extract-msg"]
+test = ["pytest"]
+
+[project.scripts]
+adg = "gateway.cli:main"
+agent-data-gateway = "gateway.cli:main"
+
+[tool.setuptools]
+packages = ["gateway", "gateway.commands", "packs", "packs.legal", "packs.extended"]
+
+[tool.setuptools.package-data]
+gateway = ["../models/*.json"]

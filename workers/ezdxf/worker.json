@@ -1,0 +1,12 @@
+{
+  "name": "ezdxf",
+  "version": "0.1.0",
+  "handles": [{"kind": "dxf", "role": "parse"}],
+  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "ezdxf"},
+  "python_requires": ["ezdxf"],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "MIT",
+  "notes": "DXF 完整解析（图层/实体/句柄/坐标/文本）。"
+}

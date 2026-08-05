@@ -1,0 +1,21 @@
+{
+  "name": "docling",
+  "version": "0.1.0",
+  "handles": [
+    {"kind": "pdf", "role": "parse"},
+    {"kind": "docx", "role": "parse"},
+    {"kind": "doc", "role": "parse"},
+    {"kind": "xlsx", "role": "parse"},
+    {"kind": "xls", "role": "parse"},
+    {"kind": "presentation", "role": "parse"},
+    {"kind": "html", "role": "parse"}
+  ],
+  "requirements": {"min_ram_mb": 4096, "gpu": "optional", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "docling"},
+  "docker": {"image": "adg-worker-docling:0.1.0"},
+  "python_requires": ["docling"],
+  "weight": "heavy",
+  "maturity": "implemented",
+  "license": "MIT",
+  "notes": "数字文档首选 parser。适配器已实现；docling 首次运行会下载模型（需要外网，安装阶段完成）。未经本机实测——adg setup --worker docling 后用 adg verify 校准。"
+}

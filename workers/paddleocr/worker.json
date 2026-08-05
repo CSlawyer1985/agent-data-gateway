@@ -1,0 +1,12 @@
+{
+  "name": "paddleocr",
+  "version": "0.1.0",
+  "handles": [{"kind": "image", "role": "parse"}],
+  "requirements": {"min_ram_mb": 4096, "gpu": "optional", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "paddleocr"},
+  "python_requires": ["paddleocr", "paddlepaddle"],
+  "weight": "heavy",
+  "maturity": "implemented",
+  "license": "Apache-2.0",
+  "notes": "图像 OCR（中文场景）。产出 ocr_boxes（含置信度）+ page_bbox 元素。模型首次下载需外网（安装阶段完成）。OCR 有损：产物标注需对照原件核验。"
+}
