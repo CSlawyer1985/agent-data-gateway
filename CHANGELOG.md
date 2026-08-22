@@ -5,6 +5,13 @@
 
 ## Unreleased（2026-08-22）
 
+### 安装体验：国内镜像一等公民
+
+- `adg setup` 新增 `--index-url` 与环境变量 `ADG_PIP_INDEX_URL`（优先级：CLI > 环境变量 > pip 默认源），只影响安装动作、不写全局 pip 配置、不涉 worker 沙箱契约；dry-run 与失败提示均展示当前镜像。
+- 动机：本机经代理直连 PyPI 出现下载哈希不匹配与 22KB/s 级慢速，清华/阿里镜像实测恢复正常（rapidocr-onnxruntime 全依赖秒级安装）。
+- whisper 模型国内路径写入安装指引（setup 提示 + worker.json notes）：huggingface.co 直连慢/易断，建议 ModelScope 下载 `Systran/faster-whisper-small` 后经 `--worker-option model=<本地目录>` 注入；`.gitignore` 新增 `workers/*/models/` 防止模型权重误入库。
+- 新增 `tests/test_setup_index.py`（镜像解析优先级 ×4）。
+
 ### 契约与恢复边界加固
 
 - Worker Protocol 运行时严格校验：拒绝错误 job ID、未知字段、非 JSONL 和不完整终态；subprocess/Docker 共用真实超时与 stdout+stderr 输出上限。

@@ -12,6 +12,7 @@ python 依赖类：建 workers/<name>/.venv 并 pip install。
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,14 +22,29 @@ from ..hardware import detect_environment
 from ..manifest import load_manifest
 from ._common import build_registry, out_hint, resolve_out_dir, summary_line
 
+# 国内镜像示例：清华 https://pypi.tuna.tsinghua.edu.cn/simple · 阿里 https://mirrors.aliyun.com/pypi/simple/
+PIP_INDEX_ENV = "ADG_PIP_INDEX_URL"
+
 _BINARY_HINTS = {
     "officecli": "brew install officecli",
     "qpdf": "brew install qpdf",
     "libredwg": "brew install libredwg（LibreDWG，提供 dwg2dxf）",
     "libpff": "brew install libpff（提供 pffexport）",
     "tika": "安装 Java + 下载 tika-server JAR，并设 ADG_TIKA_JAR 环境变量",
-    "whisper": "brew install ffmpeg（ffmpeg 二进制），模型首次运行下载",
+    "whisper": (
+        "brew install ffmpeg（ffmpeg 二进制）。模型国内路径：huggingface.co 直连慢/易断，"
+        "建议从 ModelScope 下载 Systran/faster-whisper-small 后，"
+        "parse 时 --worker-option model=<模型目录> 注入（详见 workers/whisper/worker.json notes）"
+    ),
 }
+
+
+def resolve_index_url(cli_value: str | None) -> str | None:
+    """pip 索引解析：CLI --index-url > 环境变量 ADG_PIP_INDEX_URL > pip 默认。
+
+    只影响 setup 安装动作（编排器侧子进程），不写全局 pip 配置、不影响 worker 沙箱。
+    """
+    return cli_value or os.environ.get(PIP_INDEX_ENV) or None
 
 
 def build(sub) -> None:
@@ -42,13 +58,18 @@ def build(sub) -> None:
     p.add_argument("--out", help="输出目录（--package 时定位 manifest）")
     p.add_argument("--dry-run", action="store_true", help="只打印将执行的操作")
     p.add_argument("--yes", action="store_true", help="跳过确认提示")
+    p.add_argument(
+        "--index-url",
+        help=f"pip 索引 URL（如清华镜像）。未指定时读环境变量 {PIP_INDEX_ENV}；两者皆空用 pip 默认源",
+    )
     p.set_defaults(handler=run)
 
 
 def run(args) -> int:
+    index_url = resolve_index_url(getattr(args, "index_url", None))
     # ---- 包级缺口安装 ----
     if args.package or args.missing:
-        return _setup_from_gap(args)
+        return _setup_from_gap(args, index_url)
 
     # ---- 传统形态：--worker / --all / --lite ----
     registry = build_registry()
@@ -64,10 +85,10 @@ def run(args) -> int:
     if args.worker and not targets:
         summary_line(f"未找到外部 worker: {args.worker}")
         return 2
-    return _install_targets(targets, args.dry_run, args.yes)
+    return _install_targets(targets, args.dry_run, args.yes, index_url)
 
 
-def _setup_from_gap(args) -> int:
+def _setup_from_gap(args, index_url: str | None) -> int:
     if args.package:
         package_path = Path(args.package).resolve()
         out_dir = resolve_out_dir(args, package_path)
@@ -100,13 +121,13 @@ def _setup_from_gap(args) -> int:
             return 1
 
     targets = [w for w in registry.workers.values() if w.name in report.install_plan]
-    rc = _install_targets(targets, args.dry_run, args.yes)
+    rc = _install_targets(targets, args.dry_run, args.yes, index_url)
     if rc == 0 and not args.dry_run:
         summary_line(f"补装完成。重跑: adg parse {args.package}")
     return rc
 
 
-def _install_targets(targets, dry_run: bool, yes: bool) -> int:
+def _install_targets(targets, dry_run: bool, yes: bool, index_url: str | None = None) -> int:
     if not targets:
         summary_line("无可安装目标")
         return 0
@@ -116,9 +137,10 @@ def _install_targets(targets, dry_run: bool, yes: bool) -> int:
         if w.python_requires:
             if dry_run:
                 rel = str(venv_dir.relative_to(Path.cwd())) if venv_dir and Path.cwd() in venv_dir.parents else str(venv_dir)
-                print(f"  [dry-run] {w.name}: venv {rel} + pip install {' '.join(w.python_requires)}")
+                idx = f"（镜像: {index_url}）" if index_url else ""
+                print(f"  [dry-run] {w.name}: venv {rel} + pip install{idx} {' '.join(w.python_requires)}")
                 continue
-            ok = _install_python_worker(w.name, venv_dir, w.python_requires)
+            ok = _install_python_worker(w.name, venv_dir, w.python_requires, index_url)
             if not ok:
                 failures.append(w.name)
         else:
@@ -134,7 +156,7 @@ def _install_targets(targets, dry_run: bool, yes: bool) -> int:
     return 0
 
 
-def _install_python_worker(name: str, venv_dir: Path | None, requires: list[str]) -> bool:
+def _install_python_worker(name: str, venv_dir: Path | None, requires: list[str], index_url: str | None = None) -> bool:
     if venv_dir is None:
         return False
     print(f"  {name}: 创建 venv {venv_dir.name} ...")
@@ -144,11 +166,20 @@ def _install_python_worker(name: str, venv_dir: Path | None, requires: list[str]
         print(f"  {name}: venv 创建失败: {e}")
         return False
     pip = venv_dir / ("Scripts/pip.exe" if sys.platform == "win32" else "bin/pip")
-    print(f"  {name}: pip install {' '.join(requires)} ...")
+    mirror_args = ["-i", index_url] if index_url else []
+    idx_note = f" -i {index_url}" if index_url else ""
+    print(f"  {name}: pip install{idx_note} {' '.join(requires)} ...")
     try:
-        subprocess.run([str(pip), "install", "--disable-pip-version-check", *requires], check=True, timeout=1800)
+        subprocess.run(
+            [str(pip), "install", "--disable-pip-version-check", *mirror_args, *requires],
+            check=True, timeout=1800,
+        )
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         print(f"  {name}: pip install 失败（可能是 Python {sys.version_info.major}.{sys.version_info.minor} 无预编译 wheel）")
-        print(f"  {name}: 可手动: {pip} install {' '.join(requires)}")
+        if index_url:
+            manual = f"{pip} install -i {index_url} {' '.join(requires)}"
+        else:
+            manual = f"{pip} install {' '.join(requires)}（网络慢/哈希不匹配时：设 {PIP_INDEX_ENV}=<国内镜像> 或加 --index-url）"
+        print(f"  {name}: 可手动: {manual}")
         return False

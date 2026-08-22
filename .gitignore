@@ -25,6 +25,9 @@ adg-verify-*/
 input/
 *.local
 
+# worker 本地模型权重（体积大且机器相关，经 --worker-option 注入路径使用）
+workers/*/models/
+
 # 本地 harness（迭代纪律等，不随仓库分发）
 .claude/
 
