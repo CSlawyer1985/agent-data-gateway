@@ -46,7 +46,7 @@
 | **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
 | **外部 worker** | ✅ 22 个适配器随 wheel 发布（含 anydoc / pdf_render / dwgread），按环境安装；可用性以本机 `adg check` 为准 |
 | **Agent 接口** | ✅ 元素级检索索引 + `adg index/search/anchor/get`：命中带来源锚点与可引用标注，纯 stdlib |
-| **验证矩阵** | ✅ `adg verify` 26/28 通过、0 失败（2 跳过为环境依赖项） |
+| **验证矩阵** | ✅ `adg verify` 27/28 通过、0 失败（1 跳过为环境依赖项）；跨 parser 对齐（L3）已用真实材料验证 |
 | **真实数据验证** | ✅ input 混合材料包（23 物理文件 → 展开/派生后 41 items）：全量入账、覆盖率 **97.6%**、仅剩 1 项未解决（CAJ 属知网专有格式，无开源解析器），带原因与可执行建议 |
 | **资料利用率** | 📋 设计已定稿未实现：增益轨（多视角并行）+ 信号探测度量 + 快速/均衡/质量三档成本控制（[ADR 0002](docs/adr/0002-utilization-as-first-class-goal.md) / [spec 11](docs/spec/11-utilization.md)） |
 | **云端扩展** | 📋 设计预留（远程 worker 后端、云端模型路由），未实现 |
@@ -221,6 +221,7 @@ agent-data-gateway/
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
 | 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |
 | 2026-08-22 | Unreleased | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
+| 2026-08-23 | Unreleased | 缺陷/校准 | officecli 适配器实测校准：补 `--json`、按 `{success,data.results}` 解析、正文改段落级锚点、批注/修订经 anchoredTo 挂回段落；**查询失败不再退化成「0 条」而是显性失败**。同时修正 docx fixture 为合规 OOXML（此前缺 `document.xml.rels` 与 Content_Types 声明，Word 与任何规范实现都读不到那条批注，验证矩阵在测一个假场景）。L3 跨 parser 对齐首次真实通过：916 元素配对 score=1.0 |
 | 2026-08-23 | Unreleased | 能力/缺陷 | DWG 改为 dwgread 直读（dwg2dxf 中转的 DXF 结构性损坏，ezdxf.recover 亦拒绝加载），真实图纸提出 9777 条文字并带图层/句柄锚点；修复所有 adapter 用 UTF-8 硬解子进程输出（中文工具输出 GBK 一个字节即崩）。覆盖率 95.1%→**97.6%**，仅剩 CAJ 一项 |
 | 2026-08-22 | Unreleased | 能力/缺陷 | 加密 PDF 先试空用户口令（多数只是所有者限制，此前一律谎报"需密码"）；扫描 PDF 新增 pdf_render 本地位图链（无需 Docker/GPU）；接入 anydoc（Rust/MIT）补齐 RTF/EPUB/ODS/ODP 等格式；CAJ 从"类型无法识别"升级为带建议的显性未解决；修复"内容经派生物提取却报没读到"的核心误报。真实包覆盖率 88.6%→95.1% |
 | 2026-08-22 | Unreleased | 设计决策 | 确立「资料利用率」为一等目标：降级链（or 语义）之外增加增益轨（and 语义），多视角并行提取；分母靠廉价信号探测而非估计；多轨分歧只记录不裁决；成本靠探测门控/页级增益/身份缓存/条件升级/预算调度五机制，`--profile fast\|balanced\|quality` 是其上的界面。ADR 0002 + spec 11，实现未开始 |

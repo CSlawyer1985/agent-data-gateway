@@ -1,12 +1,31 @@
 {
   "name": "officecli",
-  "version": "0.1.0",
-  "handles": [{"kind": "docx", "role": "parse"}],
-  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
-  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_command": ["officecli", "--version"]},
+  "version": "0.2.0",
+  "handles": [
+    {
+      "kind": "docx",
+      "role": "parse"
+    }
+  ],
+  "requirements": {
+    "min_ram_mb": 1024,
+    "gpu": "none",
+    "backend": [
+      "subprocess"
+    ],
+    "network": false
+  },
+  "subprocess": {
+    "adapter": "adapter.py",
+    "venv": ".venv",
+    "probe_command": [
+      "officecli",
+      "--version"
+    ]
+  },
   "python_requires": [],
   "weight": "light",
-  "maturity": "experimental",
+  "maturity": "implemented",
   "license": "Apache-2.0",
-  "notes": "docx 批注/修订多轨增强（officecli query comment/revision）。本机已装 officecli 时即刻可用。输出格式需实测校准——首次使用后用 adg verify 验证。"
+  "notes": "docx 多轨提取（officecli query --json）：正文段落带 /body/p[N] 段落锚点与标题层级；批注带 author/date/done，并经 anchoredTo 挂回段落；修订带 ins/del 与作者。2026-08-23 已用合规 OOXML 实测校准（此前参数顺序与输出解析均未验证过）。任一查询失败即显性失败，绝不退化成零条——「没有批注」与「我没读到批注」对律师是两回事。"
 }

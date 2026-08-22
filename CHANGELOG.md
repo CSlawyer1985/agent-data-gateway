@@ -12,6 +12,34 @@
 - whisper 模型国内路径写入安装指引（setup 提示 + worker.json notes）：huggingface.co 直连慢/易断，建议 ModelScope 下载 `Systran/faster-whisper-small` 后经 `--worker-option model=<本地目录>` 注入；`.gitignore` 新增 `workers/*/models/` 防止模型权重误入库。
 - 新增 `tests/test_setup_index.py`（镜像解析优先级 ×4）。
 
+### officecli 实测校准与 fixture 合规化：多轨与 L3 对齐首次真实通过
+
+装上 `officecli` 后第一次真跑（worker.json 原本就写着「输出格式需实测校准」），发现两处问题：
+
+- **适配器从未真正工作过**：没传 `--json`，输出是人类可读文本；解析代码又按 `list` 取结果，
+  而实际 JSON 形状是 `{success, data:{matches, results}}`。于是无论文档里有没有批注，
+  它都走到"解析不了"分支——**却仍以 `status=ok` 返回，并在 notes 写「批注 0 条；修订 0 条」**。
+  这是典型的假装成功：「没有批注」与「我没读到批注」对律师是两回事。
+- **验证 fixture 本身不合规**：`make_docx()` 写了 `word/comments.xml`，但既没在
+  `[Content_Types].xml` 声明，也没有 `word/_rels/document.xml.rels`。按 OOXML 规范，
+  Word 与任何规范实现都看不到这条批注——`docx_lite` 能读到只是因为它直接读 zip 成员、
+  绕过关系图。**验证矩阵一直在一个 Word 都打不开的文件上验证"批注可提取"。**
+
+修复：
+
+- 重写 `workers/officecli/adapter.py`（0.1.0 → 0.2.0，maturity experimental → implemented）：
+  `query <file> <selector> --json` 三查询（paragraph / comment / revision），
+  正文按 `/body/p[N]` 给段落级锚点并识别标题层级；批注取 author/date/done 并经 `anchoredTo`
+  挂回段落；修订取 `revision.type`(ins/del)/author/date 并经 `revision.nativePath` 挂回段落。
+  **任一查询失败或输出不可解析即 `status=failed`**，交降级链换 parser，绝不给出可能缺轨的产物。
+- `make_docx()` 补齐 `[Content_Types].xml` 的 comments/core 声明与 `word/_rels/document.xml.rels`，
+  成为合规 OOXML；验证矩阵从此测的是真实场景。
+
+结果：官方 CLI 在合规文档上提出 9 段正文（含标题层级）、1 条批注（作者、锚到第 3 段）、
+2 条修订（ins/del、作者、锚到第 4 段）。`adg verify` 26/28 → **27/28、0 失败**——
+「L3 跨 parser alignment」首次真实通过（renditions=2, alignments=1）；真实材料包上
+docx_lite 与 officecli 双轨对齐 **916 个元素配对、score=1.0**，为 P7 增益轨的交叉校验打好地基。
+
 ### DWG 直读与子进程解码加固：覆盖率 95.1% → 97.6%
 
 装上 `libredwg` 后暴露出两个真实问题，都不是"缺工具"能解释的：
@@ -126,8 +154,8 @@
 
 ### 验证结果
 
-- `python3 -m unittest discover -s tests`：141 项通过（本迭代累计新增 42 项：Agent 接口 31 + 派生闭包判定 4 + CAJ/RTF/ODF-EPUB 识别 3 + anydoc 与新链路由 4）。
-- 源码 `adg verify`：26/28 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
+- `python3 -m unittest discover -s tests`：141 项通过（本迭代累计新增 42 项）。
+- 源码 `adg verify`：**27/28 通过、0 失败**，仅 1 项因环境依赖跳过（pypdf 已装，降级用例不适用）；
   新增 5 条 Agent 接口验证项（索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、
   未读全材料显性提示、element_id 回溯到原件）；「扫描件」一项改为按本机能力断言——有 pdf_render 就必须
   渲染成位图并让派生物入账，没有就必须显性失败，两种情形都不允许静默；「降级链失败原因聚合」改用强制
