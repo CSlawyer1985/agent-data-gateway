@@ -32,6 +32,12 @@
 4. **FTS5 不可用时降级 LIKE 扫描**，`meta.engine` 与每条检索结果都标注 `engine=like`——不假装成索引。
 5. **超长元素**（>20000 字符）入库截断并计数，原文仍以 rendition 为准。
 
+## 去重与可见性
+
+同字节文件只保留一个 item（`dedup_saved`），但**另几份路径是案卷事实，不得就此消失**：
+`list_package_items` 与 `get_document` 必须返回 `duplicate_paths`（来自 `quality.duplicates`）。
+"这份合同在证据三和证据五各有一份"对律师有独立意义。
+
 ## 六个只读查询操作
 
 Agent 经 Bash 调 `adg` 子命令；每个子命令加 `--json` 输出可直接消费的结构化结果。
@@ -39,7 +45,7 @@ Agent 经 Bash 调 `adg` 子命令；每个子命令加 `--json` 输出可直接
 | CLI | agent_api 操作 | 回答的问题 |
 |-----|---------------|-----------|
 | `adg status` | `get_ingestion_status` / `list_unresolved_items` | 材料读全了吗？哪些没读全、为什么、怎么补？ |
-| `adg list` | `list_package_items` | 包里都有什么？（含展开出的成员） |
+| `adg list` | `list_package_items` | 包里都有什么？（含展开出的成员与去重掉的重复路径） |
 | `adg search` | `search_elements` | 哪份材料、哪个位置提到了 X？ |
 | `adg get` | `get_document` | 这份材料解析成了什么？质量与降级链如何？ |
 | `adg anchor` | `resolve_anchor` | 这条引用出自原件哪里？能不能可靠引用？ |
@@ -51,7 +57,13 @@ Agent 经 Bash 调 `adg` 子命令；每个子命令加 `--json` 输出可直接
 
 - `quotable` 直接取自该 rendition 的 `fitness.quotation`：**false 表示这段内容能检索、能作线索，
   但不能作为可靠引用**（例如 pdflite 兜底产物的锚点是近似的）。
-- 默认只搜每个文件的最优 rendition；`all_renditions` 打开后可跨 rendition 比对。
+- 默认只搜每个文件的最优 rendition（`rendition_scope=best_rendition`）；`all_renditions` 打开后跨 rendition 比对。
+- **`quotable_only` 隐含 `all_renditions`**：用户要的是"能引用的内容"，若只搜最优 rendition，
+  最优轨恰好不可引用时会谎报"这份材料没有可引用内容"。
+- `path_prefix` 同时按包内原始形态（容器成员用 `::`）与镜像形态（用 `/`）匹配——
+  用户从产物目录抄来的路径是镜像形态，不得因此静默返回 0 条。
+- **无静默截断**：LIKE 降级模式没有 bm25，只能在候选窗口内排序；窗口触顶时
+  `candidate_cap_reached=true`，调用方与 CLI 都必须显性提示结果可能非全局最佳。
 
 ### 退出码（CLI 入口）
 

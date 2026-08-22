@@ -16,9 +16,9 @@ def build(sub) -> None:
     p.add_argument("--out", help="输出目录（须与 scan 一致）")
     p.add_argument("--kind", help="只搜某类材料（如 pdf/xlsx/image）")
     p.add_argument("--limit", type=int, default=20, help="返回条数上限（默认 20）")
-    p.add_argument("--quotable", action="store_true", help="只返回可可靠引用（fitness.quotation）的命中")
+    p.add_argument("--quotable", action="store_true", help="只返回可可靠引用（fitness.quotation）的命中；隐含搜全部 rendition")
     p.add_argument("--all-renditions", action="store_true", help="搜所有 rendition（默认只搜最优 rendition）")
-    p.add_argument("--path-prefix", help="只搜某个子路径下的材料")
+    p.add_argument("--path-prefix", help="只搜某个子路径下的材料（容器成员用 :: 或 / 均可）")
     p.add_argument("--json", action="store_true", help="完整 JSON 输出")
     p.set_defaults(handler=run)
 
@@ -47,6 +47,8 @@ def run(args) -> int:
         print(f"  {i}. {h['package_relative_path']} — {format_locator(h['locator'])}〔{flags}〕")
         print(f"     {h['snippet']}")
         print(f"     {h['element_id']}  parser={h['parser']} quality={h['quality']}")
+    if result.get("candidate_cap_reached"):
+        print("  ⚠️ 命中过多，LIKE 降级模式只在候选窗口内排序——结果可能不是全局最佳，请缩小检索词")
     if result.get("coverage_caveat"):
         print(f"  ⚠️ {result['coverage_caveat']}")
     if not hits:

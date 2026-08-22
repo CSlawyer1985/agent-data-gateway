@@ -34,6 +34,11 @@ INDEX_FILENAME = "index.sqlite3"
 MAX_ELEMENT_TEXT = 20000
 SNIPPET_WIDTH = 140
 
+# LIKE 降级模式没有 bm25，只能取一批候选再在 Python 侧排序。候选窗口必须够大，
+# 且触顶时显性告知调用方——静默截断会让"最佳命中"悄悄落在窗口外（no silent caps）。
+LIKE_CANDIDATE_MULTIPLIER = 20
+LIKE_CANDIDATE_FLOOR = 1000
+
 
 # ---------------- CJK 切分（入库与查询共用） ----------------
 
@@ -485,7 +490,14 @@ def search(
     """元素级检索。返回 {"engine","query","terms","total_scanned","hits"}。"""
     terms = parse_terms(query)
     if not terms:
-        return {"engine": index_meta(conn).get("engine", "like"), "query": query, "terms": [], "hits": []}
+        return {
+            "engine": index_meta(conn).get("engine", "like"),
+            "query": query,
+            "terms": [],
+            "rendition_scope": "all_renditions" if all_renditions else "best_rendition",
+            "candidate_cap_reached": False,
+            "hits": [],
+        }
     engine = index_meta(conn).get("engine", "like")
     limit = max(1, min(int(limit), 500))
 
@@ -496,12 +508,22 @@ def search(
         params.append(kind)
     if quotable_only:
         filters.append("r.fitness_quotation = 1")
+        # 用户要的是"能引用的内容"：若只搜最优 rendition，最优轨恰好不可引用时会
+        # 谎报"这份材料没有可引用内容"。因此 quotable_only 隐含搜全部 rendition。
+        all_renditions = True
     if not all_renditions:
         filters.append("r.is_best = 1")
     if path_prefix:
-        filters.append("i.package_relative_path LIKE ? ESCAPE '\\'")
-        params.append(_like_escape(path_prefix) + "%")
+        # 前缀同时按包内原始形态（容器用 ::）与镜像形态（容器用 /）匹配：
+        # 用户从产物目录里抄来的路径是镜像形态，不能因此静默返回 0 条。
+        filters.append(
+            "(i.package_relative_path LIKE ? ESCAPE '\\'"
+            " OR replace(i.package_relative_path, '::', '/') LIKE ? ESCAPE '\\')"
+        )
+        escaped = _like_escape(path_prefix) + "%"
+        params.extend([escaped, escaped])
 
+    cap_reached = False
     match_expr = _fts_match_expr(terms) if engine == "fts5" else None
     if match_expr is not None:
         sql = f"""
@@ -529,14 +551,18 @@ def search(
           WHERE 1=1{_and(like_filters)}
           LIMIT ?
         """
-        rows = conn.execute(sql, [*like_params, limit * 5]).fetchall()
-        rows = sorted(rows, key=lambda r: -_occurrences(r["text"], terms))[:limit]
+        cap = max(limit * LIKE_CANDIDATE_MULTIPLIER, LIKE_CANDIDATE_FLOOR)
+        rows = conn.execute(sql, [*like_params, cap + 1]).fetchall()
+        cap_reached = len(rows) > cap
+        rows = sorted(rows[:cap], key=lambda r: -_occurrences(r["text"], terms))[:limit]
         used_engine = "like"
 
     return {
         "engine": used_engine,
         "query": query,
         "terms": terms,
+        "rendition_scope": "all_renditions" if all_renditions else "best_rendition",
+        "candidate_cap_reached": cap_reached,
         "hits": [_row_to_hit(r, terms, used_engine) for r in rows],
     }
 

@@ -146,6 +146,62 @@ class IndexTest(unittest.TestCase):
             build_index(self.out, force=True)
 
 
+class SearchSemanticsRegressionTest(unittest.TestCase):
+    """检索过滤语义的回归：这些组合曾经会给出静默错误答案。"""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.package, cls.out = built_package()
+        build_index(cls.out, force=True)
+        cls.conn = open_index(cls.out)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.conn.close()
+
+    def test_quotable_only_searches_all_renditions(self):
+        """否则最优轨恰好不可引用时，会谎报"这份材料没有可引用内容"。"""
+        result = search(self.conn, "核对", quotable_only=True)
+        self.assertEqual(result["rendition_scope"], "all_renditions")
+        self.assertTrue(all(h["quotable"] for h in result["hits"]))
+
+    def test_default_scope_is_best_rendition(self):
+        self.assertEqual(search(self.conn, "核对")["rendition_scope"], "best_rendition")
+
+    def test_path_prefix_accepts_both_container_forms(self):
+        """产物目录里看到的是镜像形态（zip/成员），manifest 里是 :: 形态，两种都必须命中。"""
+        raw = search(self.conn, "证人证言", path_prefix="bundle.zip::")["hits"]
+        mirrored = search(self.conn, "证人证言", path_prefix="bundle.zip/")["hits"]
+        self.assertTrue(raw, "容器成员应可被 :: 前缀命中")
+        self.assertEqual(
+            [h["element_id"] for h in raw], [h["element_id"] for h in mirrored],
+            "镜像形态前缀必须与 :: 形态命中同一批元素",
+        )
+
+    def test_path_prefix_miss_is_not_silent_wrong_answer(self):
+        self.assertEqual(search(self.conn, "证人证言", path_prefix="不存在目录/")["hits"], [])
+
+    def test_like_candidate_cap_is_reported(self):
+        """LIKE 降级模式截断候选时必须显性标注，不能让"最佳命中"悄悄落在窗口外。"""
+        original = (index_mod.LIKE_CANDIDATE_MULTIPLIER, index_mod.LIKE_CANDIDATE_FLOOR)
+        index_mod.LIKE_CANDIDATE_MULTIPLIER, index_mod.LIKE_CANDIDATE_FLOOR = 1, 1
+        create_fts = index_mod._create_fts
+        index_mod._create_fts = lambda conn: False
+        try:
+            build_index(self.out, force=True)
+            conn = open_index(self.out)
+            try:
+                result = search(conn, "的", limit=1)
+                self.assertEqual(result["engine"], "like")
+                self.assertTrue(result["candidate_cap_reached"], "候选触顶必须显性告知")
+            finally:
+                conn.close()
+        finally:
+            index_mod.LIKE_CANDIDATE_MULTIPLIER, index_mod.LIKE_CANDIDATE_FLOOR = original
+            index_mod._create_fts = create_fts
+            build_index(self.out, force=True)
+
+
 class AgentApiTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -223,6 +279,22 @@ class AgentApiTest(unittest.TestCase):
         for entry in unresolved["unresolved_items"]:
             self.assertTrue(entry["reason"])
             self.assertTrue(entry["package_relative_path"])
+
+    def test_deduplicated_paths_stay_visible(self):
+        """去重只保留一个 item，但另一份路径是案卷事实，不能就此消失。"""
+        rows = self.view.list_package_items(limit=1000)["items"]
+        dup_rows = [r for r in rows if r.get("duplicate_paths")]
+        self.assertTrue(dup_rows, "fixture 含同字节重复文件，应有 duplicate_paths")
+        paths = dup_rows[0]["duplicate_paths"]
+        self.assertGreaterEqual(len(paths), 2)
+        self.assertIn(dup_rows[0]["package_relative_path"], paths)
+        doc = self.view.get_document(dup_rows[0]["source_id"], include_elements=False)
+        self.assertEqual(doc["duplicate_paths"], paths)
+
+    def test_negative_offset_is_clamped(self):
+        head = self.view.get_document("合同笔记.txt", max_elements=2, offset=0)["elements"]
+        clamped = self.view.get_document("合同笔记.txt", max_elements=2, offset=-5)["elements"]
+        self.assertEqual([e["element_id"] for e in head], [e["element_id"] for e in clamped])
 
     def test_no_absolute_path_leaks_in_any_result(self):
         payloads = [

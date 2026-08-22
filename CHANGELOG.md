@@ -12,6 +12,21 @@
 - whisper 模型国内路径写入安装指引（setup 提示 + worker.json notes）：huggingface.co 直连慢/易断，建议 ModelScope 下载 `Systran/faster-whisper-small` 后经 `--worker-option model=<本地目录>` 注入；`.gitignore` 新增 `workers/*/models/` 防止模型权重误入库。
 - 新增 `tests/test_setup_index.py`（镜像解析优先级 ×4）。
 
+### 缺陷修复：Agent 查询层的六处静默错误答案
+
+本轮自查发现的问题全部位于本次新增的查询层，均已修复并补回归测试：
+
+| # | 问题 | 后果 | 修复 |
+|---|------|------|------|
+| 1 | `adg list` 直接读 manifest，未走 `agent_api` | 与 spec 10 声称的单一权威不符，且拿不到 `reliably_read` | 改为复用 `list_package_items`，并新增 `--unreliable-only/--limit/--offset` |
+| 2 | `--quotable` 与「默认只搜最优 rendition」叠加 | 最优轨恰好不可引用时**谎报"这份材料没有可引用内容"** | `quotable_only` 隐含搜全部 rendition；结果新增 `rendition_scope` |
+| 3 | LIKE 降级模式取前 `limit×5` 行再排序 | 真正最佳命中可能落在窗口外且不告知（静默截断） | 候选窗口提到 `max(limit×20, 1000)`，触顶时 `candidate_cap_reached=true` 并在 CLI 提示 |
+| 4 | 去重掉的另一份路径在查询层不可见 | "这份合同在证据三和证据五各有一份"这一案卷事实丢失 | `list_package_items`/`get_document` 返回 `duplicate_paths` |
+| 5 | `--path-prefix` 只认 `::` 形态 | 用产物目录里的镜像路径（`zip/成员`）过滤会静默返回 0 条，被读成"材料里没有" | 前缀同时按 `::` 与 `/` 两种形态匹配 |
+| 6 | `get_document(offset=-1)` 走负数切片 | 返回 0 条却标 `elements_truncated=true`，语义混乱 | offset 夹到非负 |
+
+其中 2、3、5 属同一类：**给出静默的错误答案比报错更危险**——用户会把"没搜到"读成"材料里没有"。
+
 ### 设计决策：资料利用率成为一等目标（ADR 0002 + spec 11，实现未开始）
 
 - **问题**：完整性 100% ≠ 信息拿全了。一份 200 页扫描合同文字层提取成功即记完整，
@@ -63,7 +78,7 @@
 
 ### 验证结果
 
-- `python3 -m unittest discover -s tests`：123 项通过（新增 24 项覆盖切分/索引/检索/回溯/六个查询操作）。
+- `python3 -m unittest discover -s tests`：130 项通过（新增 31 项覆盖切分/索引/检索/回溯/六个查询操作，含上表六处缺陷的回归用例）。
 - 源码 `adg verify`：25/27 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
   新增 5 条验证项：索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、未读全材料显性提示、
   element_id 回溯到原件。

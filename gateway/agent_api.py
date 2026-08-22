@@ -39,6 +39,7 @@ class PackageView:
     _conn: sqlite3.Connection | None = None
     _index_stats: IndexStats | None = None
     _docs_cache: dict[str, list[dict]] = field(default_factory=dict)
+    _dup_paths: dict[str, list[str]] | None = None
 
     # ---------------- 生命周期 ----------------
 
@@ -109,8 +110,10 @@ class PackageView:
                     "errors": item.errors,
                     "origin": item.origin,
                     "derived_from": item.derived_from,
+                    "duplicate_paths": self.duplicate_paths(item.source_id),
                 }
             )
+        offset = max(0, int(offset))
         total = len(rows)
         window = rows[offset : offset + max(1, int(limit))]
         return {
@@ -174,6 +177,7 @@ class PackageView:
         max_elements: int = MAX_ELEMENTS_DEFAULT,
         offset: int = 0,
     ) -> dict:
+        offset = max(0, int(offset))
         item = self.find_item(ref)
         docs = [d for d in self._docs(item.source_id) if d["rendition_id"] in item.renditions]
         summaries = [self._rendition_summary(d) for d in docs]
@@ -197,6 +201,7 @@ class PackageView:
             "errors": item.errors,
             "origin": item.origin,
             "derived_from": item.derived_from,
+            "duplicate_paths": self.duplicate_paths(item.source_id),
             "renditions": summaries,
             "rendering_relpath": mirror_relpath(item.package_relative_path) + ".md",
         }
@@ -329,6 +334,17 @@ class PackageView:
         if status:
             return f"{status} 项材料未被可靠读取，其内容不在检索范围内（adg status 查看）"
         return None
+
+    def duplicate_paths(self, source_id: str) -> list[str] | None:
+        """同一字节在包内出现的全部路径。去重只保留一个 item，另几份路径不能就此消失——
+        「这份合同在证据三和证据五各有一份」对律师是案卷事实。"""
+        if self._dup_paths is None:
+            self._dup_paths = {
+                group["source_id"]: list(group.get("paths", []))
+                for group in self.manifest.quality.get("duplicates", [])
+                if len(group.get("paths", [])) > 1
+            }
+        return self._dup_paths.get(source_id)
 
     def _docs(self, source_id: str) -> list[dict]:
         """同一视图内缓存 rendition 读取（每次读取都做完整性校验，缓存避免重复付费）。"""
