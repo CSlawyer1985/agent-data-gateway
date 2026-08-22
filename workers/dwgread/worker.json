@@ -1,0 +1,12 @@
+{
+  "name": "dwgread",
+  "version": "0.1.0",
+  "handles": [{"kind": "dwg", "role": "parse"}],
+  "requirements": {"min_ram_mb": 2048, "gpu": "none", "backend": ["subprocess"], "network": false},
+  "subprocess": {"adapter": "adapter.py", "probe_command": ["dwgread", "--version"]},
+  "python_requires": [],
+  "weight": "light",
+  "maturity": "implemented",
+  "license": "GPL-3.0（LibreDWG 二进制调用，独立进程隔离）",
+  "notes": "DWG 直读（dwgread -O JSON）→ 图纸文字/图层/范围，locator 用 entity(handle,layer)。相比 dwg2dxf 中转的优势：DXF 转换常结构性损坏（句柄重复、缺 ENDBLK），连 ezdxf.recover 都读不了，而 dwgread 直接读原始 DWG。工程纠纷里图纸的证据价值多在标注、图签与说明文字上。options: max_json_mb（默认 512，超限显性失败而非撑爆内存）、max_texts（默认 20000）。"
+}

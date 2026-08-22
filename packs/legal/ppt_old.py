@@ -52,7 +52,7 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
                     str(source_path),
                 ],
                 capture_output=True,
-                text=True,
+                text=True, errors="replace",
                 timeout=300,
             )
         except subprocess.TimeoutExpired:

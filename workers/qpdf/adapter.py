@@ -25,7 +25,7 @@ def handle_parse(req):
     if password:
         cmd.append(f"--password={password}")
     cmd += [str(src), str(out)]
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=600)
     if proc.returncode != 0 or not out.exists():
         err = (proc.stderr or "")[-300:]
         if not password and ("password" in err.lower() or "invalid password" in err.lower()):

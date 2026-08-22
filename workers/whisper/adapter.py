@@ -25,7 +25,7 @@ def _to_wav(src: str, work_dir: Path) -> str:
     out = work_dir / "adg-audio.wav"
     proc = subprocess.run(
         ["ffmpeg", "-y", "-i", src, "-ar", "16000", "-ac", "1", "-f", "wav", str(out)],
-        capture_output=True, text=True, timeout=600,
+        capture_output=True, text=True, errors="replace", timeout=600,
     )
     if proc.returncode != 0:
         raise RuntimeError(f"ffmpeg 转码失败: {(proc.stderr or '')[-300:]}")

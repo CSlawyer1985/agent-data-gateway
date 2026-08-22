@@ -25,7 +25,7 @@ def handle_parse(req):
                 "error": {"kind": "dependency_missing", "message": "ADG_TIKA_JAR 未设置或不存在"}}
     proc = subprocess.run(
         ["java", "-jar", jar, "--metadata", req["source_path"]],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True, text=True, errors="replace", timeout=300,
     )
     if proc.returncode != 0:
         return {"type": "parse_result", "status": "failed",

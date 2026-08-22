@@ -61,6 +61,12 @@ class RoutingTableTest(unittest.TestCase):
                 chain = routing.resolve_chain(kind, fmt, {})[0]
                 self.assertEqual("anydoc", chain[0])
 
+    def test_dwg_prefers_direct_read_over_lossy_dxf_conversion(self) -> None:
+        """实测：dwg2dxf 转出的 DXF 常结构性损坏，连 ezdxf.recover 都读不了——直读必须排在前面。"""
+        chain = routing.resolve_chain("dwg", None, {})[0]
+        self.assertEqual("dwgread", chain[0])
+        self.assertLess(chain.index("dwgread"), chain.index("libredwg"))
+
     def test_caj_is_recognized_but_honestly_unresolved(self) -> None:
         """知网 CAJ 无开源解析器：必须从"类型无法识别"升级为"知道是什么 + 怎么办"。"""
         rows = [row for row in routing.route_catalog() if row["kind"] == "caj"]

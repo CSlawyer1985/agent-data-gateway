@@ -18,7 +18,7 @@ def send(obj):
 
 
 def _run(args, timeout=300):
-    proc = subprocess.run(["officecli"] + args, capture_output=True, text=True, timeout=timeout)
+    proc = subprocess.run(["officecli"] + args, capture_output=True, text=True, errors="replace", timeout=timeout)
     return proc.returncode, proc.stdout, proc.stderr
 
 

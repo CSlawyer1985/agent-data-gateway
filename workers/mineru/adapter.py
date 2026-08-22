@@ -34,7 +34,7 @@ def handle_parse(req):
         cmd = ["mineru", "-p", src, "-o", out_dir]
         env = dict(os.environ)
         env.setdefault("MINERU_DEVICE_MODE", "cpu")
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=2400, env=env)
+        proc = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=2400, env=env)
         if proc.returncode != 0:
             return {"type": "parse_result", "status": "failed",
                     "error": {"kind": "crash", "message": f"mineru 退出码 {proc.returncode}: {(proc.stderr or '')[-300:]}"}}

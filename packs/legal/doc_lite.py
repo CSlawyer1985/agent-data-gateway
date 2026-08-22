@@ -23,7 +23,7 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
         proc = subprocess.run(
             ["textutil", "-convert", "txt", "-stdout", str(source_path)],
             capture_output=True,
-            text=True,
+            text=True, errors="replace",
             timeout=120,
         )
     except FileNotFoundError:

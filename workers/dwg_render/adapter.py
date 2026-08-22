@@ -26,7 +26,7 @@ def handle_parse(req):
     # 注意：dwgbmp 用法为 `dwgbmp [OPTION]... DWGFILE [thumbnailfile]`，输出文件是位置参数，无 -o 选项。
     proc = subprocess.run(
         ["dwgbmp", str(src), str(bmp)],
-        capture_output=True, text=True, timeout=300,
+        capture_output=True, text=True, errors="replace", timeout=300,
     )
     output_files = []
     warnings = []

@@ -20,7 +20,7 @@ def handle_parse(req):
     out = work_dir / (src.stem + ".dxf")
     proc = subprocess.run(
         ["dwg2dxf", "-o", str(out), str(src)],
-        capture_output=True, text=True, timeout=1800,
+        capture_output=True, text=True, errors="replace", timeout=1800,
     )
     if proc.returncode != 0 or not out.exists():
         return {"type": "parse_result", "status": "failed",

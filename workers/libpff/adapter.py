@@ -20,7 +20,7 @@ def handle_parse(req):
     out_dir.mkdir(parents=True, exist_ok=True)
     proc = subprocess.run(
         ["pffexport", "-f", "eml", "-t", str(out_dir), req["source_path"]],
-        capture_output=True, text=True, timeout=3600,
+        capture_output=True, text=True, errors="replace", timeout=3600,
     )
     if proc.returncode != 0:
         return {"type": "parse_result", "status": "failed",

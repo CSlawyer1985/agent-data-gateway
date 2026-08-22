@@ -12,6 +12,31 @@
 - whisper 模型国内路径写入安装指引（setup 提示 + worker.json notes）：huggingface.co 直连慢/易断，建议 ModelScope 下载 `Systran/faster-whisper-small` 后经 `--worker-option model=<本地目录>` 注入；`.gitignore` 新增 `workers/*/models/` 防止模型权重误入库。
 - 新增 `tests/test_setup_index.py`（镜像解析优先级 ×4）。
 
+### DWG 直读与子进程解码加固：覆盖率 95.1% → 97.6%
+
+装上 `libredwg` 后暴露出两个真实问题，都不是"缺工具"能解释的：
+
+- **中文工具输出把 worker 打崩**：所有 adapter 用 `subprocess.run(..., text=True)` 捕获输出，
+  即按 UTF-8 解码。中文 CAD 图纸的实体名是 GBK，`dwg2dxf` 往 stderr 一写，
+  `UnicodeDecodeError: 0xd0 in position 2934` 直接让整个 worker 崩掉。
+  这是**中文材料场景下的通用地雷**——12 个 adapter/模块统一加 `errors="replace"`：
+  输出可读、永不抛异常。
+- **dwg2dxf 中转不可靠**：转出的 DXF 句柄重复、缺 ENDBLK、`BLOCK_RECORD` 类型错，
+  连 `ezdxf.recover`（专为破损 DXF 设计）都拒绝加载，只能靠 dxf_lite 兜底拿到
+  `entities_total: 0`——诚实但无用。
+
+修复：新增 `dwgread` worker，用 `dwgread -O JSON` **直读原始 DWG**，绕过 DXF 中转。
+实测同一张图纸提出 **9777 条图纸文字**、110 个图层，locator 用 `entity(handle, layer)`
+与 dxf_lite/ezdxf 一致。工程纠纷里图纸的证据价值多在标注、图签与说明文字上，这条路径
+把"完全读不了"变成"可检索、可回溯到图层与句柄"。`dwg` 链改为
+`dwgread → libredwg → dwg_render`（先直读文字，再转 DXF 取几何，最后位图保可视证据）。
+
+内存边界显性化：`dwgread` JSON 对 7MB 图纸膨胀到 86MB，worker 设 `max_json_mb`（默认 512）
+上限，超限**显性失败并给出调参指引**，不静默截断也不撑爆内存。
+
+真实包最终：41 items 全量入账，**40/41 可靠读取（97.56%）**，仅剩 CAJ 一项——
+知网专有格式无开源解析器，属真实能力边界，带"用 CAJViewer 导出 PDF"的可执行建议。
+
 ### 能力补齐与核心误报修复：真实包覆盖率 88.6% → 95.1%
 
 针对真实材料包里剩下的 4 项未解决逐一排查，其中两项根本不是能力缺口而是缺陷：
@@ -101,7 +126,7 @@
 
 ### 验证结果
 
-- `python3 -m unittest discover -s tests`：140 项通过（本迭代累计新增 41 项：Agent 接口 31 项 + 派生闭包判定 4 项 + CAJ/RTF/ODF-EPUB 识别 3 项 + anydoc 与新链路由 3 项）。
+- `python3 -m unittest discover -s tests`：141 项通过（本迭代累计新增 42 项：Agent 接口 31 + 派生闭包判定 4 + CAJ/RTF/ODF-EPUB 识别 3 + anydoc 与新链路由 4）。
 - 源码 `adg verify`：26/28 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
   新增 5 条 Agent 接口验证项（索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、
   未读全材料显性提示、element_id 回溯到原件）；「扫描件」一项改为按本机能力断言——有 pdf_render 就必须
@@ -110,9 +135,9 @@
 - 独立 wheel 安装验证：33 个 Worker 全部可发现，`adg setup --worker pypdf --dry-run` 可定位目标；
   P5 两个模块（index/agent_api）与四个新子命令随 wheel 发布；
   干净 venv 内 `adg verify` 26/27 通过、0 失败，仅 officecli 不可用一项跳过。
-- 真实材料包（23 个物理文件，展开/派生后 41 items）：全部入账；**39/41 可靠读取（95.12%）**，
-  仅剩 2 项 unresolved——DWG（`brew install libredwg` 后可解）与 CAJ（知网专有格式，需 CAJViewer 导出 PDF），
-  均带原因与可执行建议，0 项假成功；索引 3308 个元素、FTS5 引擎，加密 PDF 与扫描件 OCR 内容均已可检索、可回溯。
+- 真实材料包（23 个物理文件，展开/派生后 41 items）：全部入账；**40/41 可靠读取（97.56%）**，
+  仅剩 CAJ 一项 unresolved（知网专有格式无开源解析器，属真实能力边界），0 项假成功；
+  索引 14123 个元素、FTS5 引擎——加密 PDF、扫描件 OCR、CAD 图纸 9777 条文字均可检索并回溯到锚点。
 
 ## v0.1.0（2026-08-05）
 

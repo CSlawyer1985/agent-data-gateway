@@ -111,7 +111,13 @@ ROUTE_RULES: tuple[RouteRule, ...] = (
     RouteRule("audio-default", "audio", "音频先用 Whisper 生成带时间码的转录，失败时仅保留媒体元数据", ("whisper", "av_lite")),
     RouteRule("video-default", "video", "视频先抽帧并尝试语音转录，最后仅保留媒体元数据", ("video_frames", "whisper", "av_lite")),
     RouteRule("dxf-default", "dxf", "DXF 是结构化 CAD 文本，优先完整解析，内置解析器兜底", ("ezdxf", "dxf_lite")),
-    RouteRule("dwg-default", "dwg", "DWG 需先转为 DXF 获取结构，或渲染位图保留可视证据", ("libredwg", "dwg_render")),
+    RouteRule(
+        "dwg-default",
+        "dwg",
+        "DWG 优先直读（dwgread 取图纸文字/图层/范围，避开 dwg2dxf 中转常见的结构损坏），"
+        "再退转 DXF 取几何，最后渲染位图保留可视证据",
+        ("dwgread", "libredwg", "dwg_render"),
+    ),
     RouteRule(
         "presentation-odp",
         "presentation",

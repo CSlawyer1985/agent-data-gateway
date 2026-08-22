@@ -22,7 +22,7 @@ def _duration(path: str) -> float:
     try:
         p = subprocess.run(
             ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, errors="replace", timeout=30,
         )
         return float(p.stdout.strip() or "0")
     except (ValueError, subprocess.TimeoutExpired):
@@ -49,7 +49,7 @@ def handle_parse(req):
         ["ffmpeg", "-y", "-loglevel", "error", "-i", src,
          "-vf", f"fps=1/{interval:.2f}", "-frames:v", str(n_frames),
          "-q:v", "3", pattern],
-        capture_output=True, text=True, timeout=600,
+        capture_output=True, text=True, errors="replace", timeout=600,
     )
     output_files = []
     if proc.returncode != 0 and not any(frames_dir.glob("*.jpg")):

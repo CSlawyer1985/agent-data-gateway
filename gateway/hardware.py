@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 def _run(cmd: list[str], timeout: int = 8) -> tuple[int, str]:
     try:
-        p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
         out = (p.stdout or p.stderr or "").strip()
         return p.returncode, out.split("\n")[0] if out else ""
     except (OSError, subprocess.TimeoutExpired) as e:
