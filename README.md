@@ -45,8 +45,9 @@
 | **编排器核心** | ✅ 完整可用：发现/安全展开/类型识别/特征路由/调度/质量/锚点/谱系/渲染，纯 stdlib |
 | **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
 | **外部 worker** | ✅ 19 个适配器随 wheel 发布，按环境安装；可用性以本机 `adg check` 为准 |
-| **验证矩阵** | ✅ `adg verify` 21/22 通过（1 跳过为环境依赖项） |
-| **真实数据验证** | ✅ input 混合材料包（25 文件 / 13 类型 / 嵌套目录 / 压缩包）：全量入账、覆盖率 79.4%、失败项全部显性化 |
+| **Agent 接口** | ✅ 元素级检索索引 + `adg search/anchor/get` + 只读 MCP server（六工具，纯 stdlib） |
+| **验证矩阵** | ✅ `adg verify` 26/28 通过（2 跳过为环境依赖项） |
+| **真实数据验证** | ✅ input 混合材料包（23 物理文件 → 展开后 35 items / 嵌套目录 / 压缩包 / 音视频）：全量入账、覆盖率 88.6%、4 项未解决全部带原因与补装建议 |
 | **云端扩展** | 📋 设计预留（远程 worker 后端、云端模型路由），未实现 |
 | **Extended Packs** | 📋 规划（CAD 深入/GIS/DICOM 等），未发布 |
 
@@ -98,6 +99,7 @@
 | **来源锚点** | 元素级定位：页码/坐标/表格单元/时间码/字段，引用可回溯原件 | 结论无法定位到证据位置 |
 | **处理谱系** | 每次解析记录 operation/tool/exit_code/哈希，链式可查 | 产物来源与处理历史不可追溯 |
 | **隐私保护** | 产物默认只含包内相对路径，绝对路径只在本地私有日志；输出前 scrub 兜底清洗 | 客户名、目录结构、磁盘位置不泄露 |
+| **检索与回溯** | 元素级 SQLite/FTS5 索引（中文逐字切分）+ `resolve_anchor` 回溯 + 只读 MCP；命中带 `quotable` 标注 | Agent 查得到、引得回，且知道哪句不能引 |
 
 ## 格式范围与总路由表
 
@@ -153,26 +155,53 @@ adg scan ./案件材料           # 全量发现 → manifest（不解析内容�
 adg parse ./案件材料          # 解析（自动特征路由 + 降级）
 adg report ./案件材料         # 包级质量报告
 adg status ./案件材料         # 哪些文件还没被可靠读取
+
+adg search ./案件材料 "担保 效力"   # 元素级检索（命中带页码/坐标/单元格/时间码锚点）
+adg anchor ./案件材料 el_45f85d56e61a  # 把命中回溯到原件位置，确认能不能引用
+adg get ./案件材料 "合同.pdf"        # 取出解析产物、质量八维与降级链
+adg mcp ./案件材料                   # 以只读 MCP server 形态暴露给 Agent
+
 adg verify                   # 跑验证矩阵自检
 ```
+
+`adg parse` 结束后会顺手建好检索索引（`--no-index` 可关），因此 `search/anchor/mcp` 开箱即用。
 
 所有命令 stdout 只打一行摘要，详情写 `<out>/`（默认 `./adg-output/<包名>/`）下的 Markdown/JSON。exit code 三态：`0`=pass / `1`=pass_with_warnings / `2`=fail。
 
 ## 与 Agent 的关系
 
-Claude Code 等 Agent 通过 Bash 调 `adg` 子命令（`adg status` 直接回答"哪些没读全"）。`adg parse` 产出的 `EvidenceDocument` JSON 可被 Agent 直接消费；每个元素带来源锚点（页码/坐标/段落/单元格/时间码），引用时可回溯原件。
+两条等价通路，语义同源（同一份 `gateway.agent_api` 实现，不会给出两种答案）：
+
+**① Bash 调 CLI**：`adg status` 回答"哪些没读全"，`adg search` 检索，`adg anchor` 回溯，`adg get` 取产物。
+
+**② 只读 MCP server**：`adg mcp ./案件材料` 起一个 stdio server，暴露六个只读工具——
+`get_ingestion_status` / `list_package_items` / `search_elements` / `get_document` / `resolve_anchor` / `list_unresolved_items`。
+没有任何写工具：Agent 不能通过它改动材料或产物。
+
+```json
+{ "mcpServers": { "adg-案件材料": { "command": "adg", "args": ["mcp", "/path/to/案件材料"] } } }
+```
+
+三条诚实语义贯穿两个入口：
+
+- **检索范围只覆盖已可靠读取的材料**，结果里带 `coverage_caveat` 提示还有几项没读全——"没搜到"不等于"不存在"。
+- **每条命中带 `quotable`**：来自该 rendition 的 `fitness.quotation`。false 表示能检索、能作线索，但锚点不足以可靠引用。
+- **每条命中可回溯**：`resolve_anchor(element_id)` 给出原件路径、parser 与版本、页码/坐标/单元格/时间码及前后文。
 
 ## 目录结构
 
 ```
 agent-data-gateway/
 ├── gateway/          # Core 编排器（纯 stdlib）：发现/调度/质量/锚点/谱系/CLI
-│   ├── commands/     # adg check/routes/setup/scan/parse/report/status/list/verify
+│   ├── commands/     # adg check/doctor/setup/scan/parse/report/status/list/index/search/anchor/get/mcp/routes/verify
+│   ├── index.py      # 元素级检索索引（SQLite + FTS5，中文逐字切分）
+│   ├── agent_api.py  # 六个只读操作的唯一实现（CLI 与 MCP 共用）
+│   ├── mcp.py        # 只读 MCP server（JSON-RPC over stdio，纯 stdlib）
 │   └── selftest.py   # 验证矩阵（程序化 fixtures，无二进制资产）
 ├── packs/legal/      # Legal Pack：11 个 stdlib lite parser + 预检钩子
 ├── workers/          # 19 个外部 worker 适配器（docling/mineru/whisper/... 各自 venv）
 ├── models/           # 冻结 Schema v0.1（EvidenceDocument/Manifest/WorkerProtocol/Quality/Security）
-├── docs/spec/        # 10 份规格文档（00-09）
+├── docs/spec/        # 11 份规格文档（00-10）
 ├── docs/adr/         # 契约权威、写入所有权等架构决策记录
 ├── input/ scratch/ output/   # 三层目录契约
 └── pyproject.toml
@@ -188,7 +217,7 @@ agent-data-gateway/
 
 ## 规范文档
 
-`docs/spec/` 下 00-09 是权威说明；`models/*.v0.1.json` 是机器可读 Schema（normative，冲突时以 Schema 为准）。
+`docs/spec/` 下 00-10 是权威说明；`models/*.v0.1.json` 是机器可读 Schema（normative，冲突时以 Schema 为准）。
 
 ## 迭代日志
 
@@ -200,6 +229,7 @@ agent-data-gateway/
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
 | 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |
 | 2026-08-22 | Unreleased | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
+| 2026-08-22 | Unreleased | Agent 接口（P5） | 元素级检索索引（SQLite/FTS5，中文逐字切分，新鲜度指纹增量复用）+ `adg index/search/anchor/get` + 只读 MCP server（六工具、无写工具）；`adg status` 与 MCP 判定同源；`adg verify` 20/22 → 26/28；新增 35 项测试 |
 | 2026-08-22 | Unreleased | 安装体验 | `adg setup` 支持 `--index-url`/`ADG_PIP_INDEX_URL` 国内镜像（不污染全局 pip 配置）；whisper 模型 ModelScope 国内路径指引 + `--worker-option model=` 本地注入；`.gitignore` 忽略 worker 本地模型权重；真实材料包补装 5 个 worker 后覆盖率 34.3%→88.6% |
 
 ## 许可证

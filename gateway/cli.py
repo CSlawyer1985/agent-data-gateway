@@ -11,7 +11,23 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .commands import check, doctor, list_, parse, report, routes, scan, setup, status, verify
+from .commands import (
+    anchor,
+    check,
+    doctor,
+    get,
+    index_,
+    list_,
+    mcp,
+    parse,
+    report,
+    routes,
+    scan,
+    search,
+    setup,
+    status,
+    verify,
+)
 from .errors import ADGError
 
 EXIT_CODE = {"pass": 0, "pass_with_warnings": 1, "fail": 2}
@@ -33,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
     report.build(sub)
     status.build(sub)
     list_.build(sub)
+    index_.build(sub)
+    search.build(sub)
+    anchor.build(sub)
+    get.build(sub)
+    mcp.build(sub)
     routes.build(sub)
     verify.build(sub)
     return p

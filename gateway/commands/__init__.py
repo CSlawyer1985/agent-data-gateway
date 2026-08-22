@@ -1,3 +1,19 @@
 """CLI 子命令包。每个模块暴露 build(subparsers) 注册参数与 handler。"""
 
-from . import check, doctor, list_, parse, report, scan, setup, status, verify  # noqa: F401
+from . import (  # noqa: F401
+    anchor,
+    check,
+    doctor,
+    get,
+    index_,
+    list_,
+    mcp,
+    parse,
+    report,
+    routes,
+    scan,
+    search,
+    setup,
+    status,
+    verify,
+)

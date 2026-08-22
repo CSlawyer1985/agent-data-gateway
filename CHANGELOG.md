@@ -12,6 +12,28 @@
 - whisper 模型国内路径写入安装指引（setup 提示 + worker.json notes）：huggingface.co 直连慢/易断，建议 ModelScope 下载 `Systran/faster-whisper-small` 后经 `--worker-option model=<本地目录>` 注入；`.gitignore` 新增 `workers/*/models/` 防止模型权重误入库。
 - 新增 `tests/test_setup_index.py`（镜像解析优先级 ×4）。
 
+### Agent 接口（P5）：查得到、引得回
+
+- 新增元素级检索索引 `gateway/index.py`：SQLite + FTS5，落在 `<out>/.adg/index/index.sqlite3`。
+  - **中文可检索**：FTS5 默认 unicode61 分词器切不开中日韩文本，入库与查询两端共用 `segment_cjk()` 逐字切分，
+    因此「担保」能命中「企业对外担保」；两字词不再落空。
+  - **新鲜度指纹**（索引版本 | schema 版本 | adg 版本 | manifest.payload_sha256）未变则复用，变了整库重建；
+    构建持输出目录单写者锁、先写临时库再原子替换，消费方一律只读打开。
+  - FTS5 不可用时降级 LIKE 扫描，`meta.engine` 与每条结果都标注 `engine=like`——不假装成索引。
+- 新增 `gateway/agent_api.py`：六个只读操作的唯一实现，CLI 与 MCP 共用，杜绝两个入口对同一问题给出不同答案。
+  `adg status` 改为复用它（判定与 `get_ingestion_status` 同源，输出与退出码语义不变）。
+- 新增 CLI：`adg index`（构建/更新索引）、`adg search`（元素级检索，命中带锚点与 `quotable`）、
+  `adg anchor`（element_id 回溯原件位置 + 前后文）、`adg get`（取解析产物、质量八维、fitness、降级链）。
+- 新增 `gateway/mcp.py` + `adg mcp`：纯 stdlib 的只读 MCP server（JSON-RPC 2.0 over stdio），
+  暴露 `get_ingestion_status` / `list_package_items` / `search_elements` / `get_document` / `resolve_anchor` /
+  `list_unresolved_items` 六个工具，**没有任何写工具**；支持 2025-06-18 / 2025-03-26 / 2024-11-05 三个协议版本，
+  工具级失败回 `isError`、协议级错误回 JSON-RPC error，stdout 只跑协议、诊断走 stderr；
+  manifest 变化时自动重开视图，长驻 server 不会给出过期答案。
+- 诚实语义贯穿两个入口：检索结果携带 `coverage_caveat`（还有几项没读全，"没搜到"不等于"不存在"），
+  每条命中携带 `quotable`（来自 `fitness.quotation`，false = 能检索能作线索、但锚点不足以可靠引用）。
+- `adg parse` 结束后自动建索引（`--no-index` 可关），`search/anchor/mcp` 开箱即用。
+- 新增规格 `docs/spec/10-agent-interface.md`；`gateway/render.py` 新增 `format_locator()` 统一锚点的人类可读形态。
+
 ### 契约与恢复边界加固
 
 - Worker Protocol 运行时严格校验：拒绝错误 job ID、未知字段、非 JSONL 和不完整终态；subprocess/Docker 共用真实超时与 stdout+stderr 输出上限。
@@ -27,10 +49,16 @@
 
 ### 验证结果
 
-- `python3 -m unittest discover -s tests -v`：87 项通过。
-- 源码 `adg verify`：21/22 通过、0 失败、1 项因 officecli 不可用跳过。
-- 独立 wheel 安装验证：33 个 Worker 全部可发现，`adg setup --worker pypdf --dry-run` 可定位目标，安装态 `adg verify` 同样 21/22。
-- 真实材料包（23 个物理文件，展开/派生后 35 items）：全部入账；12/35 可靠读取（34.29%），5 项 unresolved、1 项显式 fail，其余能力缺口均保持 warning 而非假成功。
+- `python3 -m unittest discover -s tests`：133 项通过（新增 35 项覆盖切分/索引/检索/回溯/六操作/MCP 协议）。
+- 源码 `adg verify`：26/28 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
+  新增 6 条验证项：索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、未读全材料显性提示、
+  element_id 回溯到原件、MCP 六工具可调用且拒绝未知工具。
+- 独立 wheel 安装验证：33 个 Worker 全部可发现，`adg setup --worker pypdf --dry-run` 可定位目标；
+  P5 三个模块（index/agent_api/mcp）与五个新子命令随 wheel 发布，`adg mcp --list-tools` 在安装态列出六工具；
+  干净 venv 内 `adg verify` 27/28 通过、0 失败、1 项因 officecli 不可用跳过。
+- 真实材料包（23 个物理文件，展开/派生后 35 items）：全部入账；补装 worker 后 31/35 可靠读取（88.57%），
+  4 项 unresolved（CAJ 类型未识别、DWG 缺 dwg2dxf、加密 PDF 缺 qpdf、扫描 PDF 缺 MinerU 镜像）全部带原因与补装建议，0 项假成功；
+  索引 3100 个元素、FTS5 引擎，中文检索与锚点回溯在真实材料上实测通过。
 
 ## v0.1.0（2026-08-05）
 

@@ -169,3 +169,41 @@ def _render_element(lines: list[str], el: dict) -> None:
 def _fmt_tc(seconds: float) -> str:
     s = int(seconds)
     return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
+
+
+# ---------------- 锚点的人类可读形态（search / anchor / MCP 共用） ----------------
+
+
+def format_locator(locator: dict | None) -> str:
+    """把 locator 渲染成一句可直接写进引用的定位说明（spec 07）。"""
+    loc = locator or {}
+    system = loc.get("system")
+    if system == "page_bbox":
+        page = loc.get("page")
+        where = f"第 {page + 1} 页" if isinstance(page, int) else "页码未知"
+        bbox = loc.get("bbox")
+        if isinstance(bbox, list) and len(bbox) == 4:
+            where += f" [{', '.join(str(round(float(v), 1)) for v in bbox)}]"
+        return where
+    if system == "paragraph":
+        idx = loc.get("index")
+        return f"第 {idx + 1} 段" if isinstance(idx, int) else "段落未知"
+    if system == "cell":
+        return f"{loc.get('sheet', '?')}!{loc.get('cell', '?')}"
+    if system == "row":
+        idx = loc.get("index")
+        return f"第 {idx + 1} 行" if isinstance(idx, int) else "行未知"
+    if system == "message":
+        parts = [str(loc[k]) for k in ("id", "timestamp") if loc.get(k) is not None]
+        return "消息 " + "/".join(parts) if parts else "消息"
+    if system == "timecode":
+        return f"{_fmt_tc(float(loc.get('start', 0)))} → {_fmt_tc(float(loc.get('end', 0)))}"
+    if system == "entity":
+        bits = [f"{k}={loc[k]}" for k in ("layer", "handle") if loc.get(k) is not None]
+        return "图元 " + " ".join(bits) if bits else "图元"
+    if system == "field":
+        return f"字段 {loc.get('name', '?')}"
+    if system == "stream":
+        offset = loc.get("offset")
+        return f"流内偏移 {offset}（近似定位）" if offset is not None else "流内（近似定位）"
+    return system or "定位未知"
