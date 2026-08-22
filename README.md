@@ -48,6 +48,7 @@
 | **Agent 接口** | ✅ 元素级检索索引 + `adg index/search/anchor/get`：命中带来源锚点与可引用标注，纯 stdlib |
 | **验证矩阵** | ✅ `adg verify` 26/28 通过（2 跳过为环境依赖项） |
 | **真实数据验证** | ✅ input 混合材料包（23 物理文件 → 展开后 35 items / 嵌套目录 / 压缩包 / 音视频）：全量入账、覆盖率 88.6%、4 项未解决全部带原因与补装建议 |
+| **资料利用率** | 📋 设计已定稿未实现：增益轨（多视角并行）+ 信号探测度量 + 快速/均衡/质量三档成本控制（[ADR 0002](docs/adr/0002-utilization-as-first-class-goal.md) / [spec 11](docs/spec/11-utilization.md)） |
 | **云端扩展** | 📋 设计预留（远程 worker 后端、云端模型路由），未实现 |
 | **Extended Packs** | 📋 规划（CAD 深入/GIS/DICOM 等），未发布 |
 
@@ -58,9 +59,10 @@
 1. **完整入账**：包内每个文件都有 item 记录或显式排除记录（`all_items_accounted`），"读全了"是可验证的事实而非感觉。
 2. **失败显性化**：任何文件未能可靠读取，必须带着阶段、原因、建议出现在清单里——Agent 和律师都知道"哪里还没读全"。
 3. **诚实降级**：解析器沿降级链回退时，产物必须携带质量标注（如 `layout=fail`、`quotation=False`），让下游知道"这份内容能检索、但不能可靠引用"。
-4. **本地最优**：默认全链路本地处理，客户材料、律师执业秘密不出本机。
-5. **云端可扩**：本地无解时（无 GPU、缺重型模型、格式无本地 parser），沿显式授权路径扩展云端服务与模型，产物与来源标注规则不变。
-6. **摄取 ≠ 取证**：提取技术信号（EXIF、哈希、电子签章线索），但真伪鉴定恒为 `false`，标注"需人工/鉴定复核"。
+4. **提高资料利用率**（设计中）：同一份材料用多个工具从多个角度处理——文字视角、视觉视角、容器视角、密码学视角——把"一个工具只利用了 60%"提到尽可能高，并如实报告还有多少信号没提取。见 [spec 11](docs/spec/11-utilization.md)。
+5. **本地最优**：默认全链路本地处理，客户材料、律师执业秘密不出本机。
+6. **云端可扩**：本地无解时（无 GPU、缺重型模型、格式无本地 parser），沿显式授权路径扩展云端服务与模型，产物与来源标注规则不变。
+7. **摄取 ≠ 取证**：提取技术信号（EXIF、哈希、电子签章线索），但真伪鉴定恒为 `false`，标注"需人工/鉴定复核"。
 
 ## 实现方法
 
@@ -191,7 +193,7 @@ agent-data-gateway/
 ├── packs/legal/      # Legal Pack：11 个 stdlib lite parser + 预检钩子
 ├── workers/          # 19 个外部 worker 适配器（docling/mineru/whisper/... 各自 venv）
 ├── models/           # 冻结 Schema v0.1（EvidenceDocument/Manifest/WorkerProtocol/Quality/Security）
-├── docs/spec/        # 11 份规格文档（00-10）
+├── docs/spec/        # 12 份规格文档（00-11）
 ├── docs/adr/         # 契约权威、写入所有权等架构决策记录
 ├── input/ scratch/ output/   # 三层目录契约
 └── pyproject.toml
@@ -207,7 +209,7 @@ agent-data-gateway/
 
 ## 规范文档
 
-`docs/spec/` 下 00-10 是权威说明；`models/*.v0.1.json` 是机器可读 Schema（normative，冲突时以 Schema 为准）。
+`docs/spec/` 下 00-11 是权威说明；`models/*.v0.1.json` 是机器可读 Schema（normative，冲突时以 Schema 为准）。
 
 ## 迭代日志
 
@@ -219,6 +221,7 @@ agent-data-gateway/
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
 | 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |
 | 2026-08-22 | Unreleased | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
+| 2026-08-22 | Unreleased | 设计决策 | 确立「资料利用率」为一等目标：降级链（or 语义）之外增加增益轨（and 语义），多视角并行提取；分母靠廉价信号探测而非估计；多轨分歧只记录不裁决；成本靠探测门控/页级增益/身份缓存/条件升级/预算调度五机制，`--profile fast\|balanced\|quality` 是其上的界面。ADR 0002 + spec 11，实现未开始 |
 | 2026-08-22 | Unreleased | Agent 接口（P5） | 元素级检索索引（SQLite/FTS5，中文逐字切分，新鲜度指纹增量复用）+ `adg index/search/anchor/get`：命中带来源锚点、`quotable` 与未读全提示；查询逻辑单一权威（`gateway.agent_api`）；`adg verify` 20/22 → 25/27；新增 24 项测试 |
 | 2026-08-22 | Unreleased | 安装体验 | `adg setup` 支持 `--index-url`/`ADG_PIP_INDEX_URL` 国内镜像（不污染全局 pip 配置）；whisper 模型 ModelScope 国内路径指引 + `--worker-option model=` 本地注入；`.gitignore` 忽略 worker 本地模型权重；真实材料包补装 5 个 worker 后覆盖率 34.3%→88.6% |
 

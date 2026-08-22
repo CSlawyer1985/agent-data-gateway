@@ -12,6 +12,23 @@
 - whisper 模型国内路径写入安装指引（setup 提示 + worker.json notes）：huggingface.co 直连慢/易断，建议 ModelScope 下载 `Systran/faster-whisper-small` 后经 `--worker-option model=<本地目录>` 注入；`.gitignore` 新增 `workers/*/models/` 防止模型权重误入库。
 - 新增 `tests/test_setup_index.py`（镜像解析优先级 ×4）。
 
+### 设计决策：资料利用率成为一等目标（ADR 0002 + spec 11，实现未开始）
+
+- **问题**：完整性 100% ≠ 信息拿全了。一份 200 页扫描合同文字层提取成功即记完整，
+  但公章、手写签名、骑缝章、附件表格全未提取，律师仍要自己翻原件。
+- **根因**：`gateway.dispatcher` 的解析链是 `or` 语义——第一个 worker 成功即 `return`，
+  链上后续 worker 不再执行。这防住了"锤子坏了没有备用"，没防住"世界不只有钉子"。
+- **决策**：利用率与完整性并列为一等目标（正交，不得互相替代）；降级链之外增加
+  **增益轨 `enrich`**（`and` 语义，多视角并行，各自成独立 rendition 不合并）；
+  利用率分母来自廉价 stdlib **信号探测**（三态 `present`/`absent`/`unknown`，
+  不确定必须记 unknown 不得默认 absent）；多轨读数分歧**只记录不裁决**（与「摄取 ≠ 取证」同源）。
+- **成本**：降本靠五个机制——探测门控（信号 absent 就不启动 worker）、页级/区域级增益、
+  身份缓存 `(source_id, worker, version, config_hash)`、条件升级（低置信度才上第二引擎）、预算调度；
+  `--profile fast|balanced|quality` 是其上的用户界面，档位本身不降低成本。
+  **快速档也必须报告利用率缺口**——静默跳过增益等同于假装成功。
+- 文档：`docs/adr/0002-utilization-as-first-class-goal.md`、`docs/spec/11-utilization.md`；
+  README 目标新增第 4 条与状态表一行；`开发计划.md` 路线图新增 P7。
+
 ### Agent 接口（P5）：查得到、引得回
 
 - 新增元素级检索索引 `gateway/index.py`：SQLite + FTS5，落在 `<out>/.adg/index/index.sqlite3`。
