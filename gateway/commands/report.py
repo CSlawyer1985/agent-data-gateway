@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from ..manifest import atomic_write_json, atomic_write_text, list_rendition_docs, load_manifest
-from ..quality import DIMENSIONS, FITNESS_KEYS, reliably_read_item
+from ..quality import DIMENSIONS, FITNESS_KEYS, reliably_read_ids
 from ._common import out_hint, print_json, resolve_out_dir, summary_line
 
 
@@ -31,10 +31,15 @@ def run(args) -> int:
     fitness_counter: Counter = Counter()
     per_item: list[dict] = []
     reliable = 0
+    # 包级判定：transform 型原件的内容在派生物里，逐项单看自身 rendition 会与 adg status
+    # 给出不同答案（同一问题两个入口两种回答，ADR 0001 与 spec 10 都禁止）。
+    docs_cache = {it.source_id: list_rendition_docs(out_dir, it.source_id) for it in manifest.items}
+    reliable_ids = reliably_read_ids(
+        manifest.items, lambda sid: [d.get("quality", {}) for d in docs_cache.get(sid, [])]
+    )
     for it in manifest.items:
-        docs = list_rendition_docs(out_dir, it.source_id)
-        qualities = [d.get("quality", {}) for d in docs]
-        is_reliable = reliably_read_item(it.kind, it.status, qualities)
+        docs = docs_cache[it.source_id]
+        is_reliable = it.source_id in reliable_ids
         reliable += 1 if is_reliable else 0
         best = None
         for d in docs:

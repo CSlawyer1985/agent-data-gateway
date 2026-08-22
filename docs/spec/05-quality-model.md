@@ -23,6 +23,8 @@
 
 `unknown` 的双重语义由 expected_for 区分：该 kind 不需要此维度（不压级） vs 需要但未执行（压级）。例如 ocr 对 text 不期望，对 image 期望。
 
+**因此 expected_for 的遗漏是安全缺陷而非小瑕疵**：一个有 parser 的 kind 若不在某内容维度的 expected_for 里，该维度 `fail` 会被聚合规则静默丢弃，overall 照样报 `pass`。验证矩阵以 `tests/test_quality.py` 的守卫固定该不变量：**凡有 parse 链的 kind，text_extraction 与 source_anchoring 必须在其 expected_for 内**。`layout_preservation` 不在守卫内——text/csv/email/chat/audio/video 确实没有版面可保留。
+
 ## 聚合规则
 
 1. 任一 expected 维度 = fail → overall = **fail**。

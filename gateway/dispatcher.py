@@ -678,14 +678,23 @@ class Dispatcher:
         from .render import render_document_md
 
         index_rows: list[dict] = []
+        docs_by_sid = {
+            it.source_id: manifest_mod.list_rendition_docs(self.out_dir, it.source_id)
+            for it in self.manifest.items
+        }
+        reliable_ids = quality_mod.reliably_read_ids(
+            self.manifest.items, lambda sid: [d.get("quality", {}) for d in docs_by_sid.get(sid, [])]
+        )
         for it in self.manifest.items:
             if not it.renditions:
+                # 无自有 rendition ≠ 没读到：transform 型原件的内容在派生物里
                 index_rows.append({
                     "rel": it.package_relative_path, "kind": it.kind,
-                    "status": it.status, "reliable": False, "md": None, "note": _item_note(it),
+                    "status": it.status, "reliable": it.source_id in reliable_ids,
+                    "md": None, "note": _item_note(it),
                 })
                 continue
-            docs = manifest_mod.list_rendition_docs(self.out_dir, it.source_id)
+            docs = docs_by_sid[it.source_id]
             if not docs:
                 continue
             best = max(docs, key=lambda d: quality_mod.best_quality_rank(d.get("quality", {}).get("overall")))
@@ -708,7 +717,7 @@ class Dispatcher:
                             shutil.copy2(src, dest)
                 except Exception:
                     pass  # 复制失败不阻塞（md/json 已写）
-            reliable = quality_mod.reliably_read_item(it.kind, it.status, [d.get("quality", {}) for d in docs])
+            reliable = it.source_id in reliable_ids
             index_rows.append({
                 "rel": it.package_relative_path, "kind": it.kind,
                 "status": it.status, "reliable": reliable,

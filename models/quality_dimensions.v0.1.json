@@ -1,40 +1,105 @@
 {
   "schema_version": "0.1",
   "doc": "质量模型受控词表与聚合规则（规范数据，gateway/quality.py 直接加载执行）。说明文档：docs/spec/05-quality-model.md",
-  "overall_values": ["pass", "pass_with_warnings", "fail"],
-  "dimension_values": ["pass", "warning", "fail", "unknown"],
+  "overall_values": [
+    "pass",
+    "pass_with_warnings",
+    "fail"
+  ],
+  "dimension_values": [
+    "pass",
+    "warning",
+    "fail",
+    "unknown"
+  ],
   "dimensions": {
     "discovery": {
       "description": "文件是否被完整发现（含容器成员递归）",
-      "expected_for": ["*"]
+      "expected_for": [
+        "*"
+      ]
     },
     "type_detection": {
       "description": "类型识别置信度：魔数与扩展名一致性、检测方法",
-      "expected_for": ["*"]
+      "expected_for": [
+        "*"
+      ]
     },
     "text_extraction": {
       "description": "文本内容是否被提取（对不含文本的 kind 可为 unknown 且不压级）",
-      "expected_for": ["pdf", "docx", "xlsx", "csv", "text", "html", "email", "chat", "audio", "video", "presentation", "dxf", "image"]
+      "expected_for": [
+        "audio",
+        "chat",
+        "csv",
+        "doc",
+        "docx",
+        "dwg",
+        "dxf",
+        "email",
+        "html",
+        "image",
+        "pdf",
+        "presentation",
+        "text",
+        "video",
+        "xls",
+        "xlsx"
+      ]
     },
     "layout_preservation": {
       "description": "版面/结构信息保留程度（坐标、表格结构、分页、图层）",
-      "expected_for": ["pdf", "docx", "xlsx", "image", "presentation", "dxf"]
+      "expected_for": [
+        "doc",
+        "docx",
+        "dwg",
+        "dxf",
+        "image",
+        "pdf",
+        "presentation",
+        "xls",
+        "xlsx"
+      ]
     },
     "ocr": {
       "description": "OCR 是否执行及质量（对无 OCR 需求的 kind 不期望）",
-      "expected_for": ["image"]
+      "expected_for": [
+        "image"
+      ]
     },
     "attachments": {
       "description": "附件/嵌入对象是否完整递归回灌",
-      "expected_for": ["email", "docx", "archive"]
+      "expected_for": [
+        "email",
+        "docx",
+        "archive"
+      ]
     },
     "metadata": {
       "description": "元数据（作者、时间、EXIF、邮件头、哈希）提取程度",
-      "expected_for": ["*"]
+      "expected_for": [
+        "*"
+      ]
     },
     "source_anchoring": {
       "description": "元素能否定位回原件（页/坐标/段落/单元格/时间码/消息 ID）",
-      "expected_for": ["pdf", "docx", "xlsx", "csv", "image", "email", "chat", "audio", "video", "dxf", "text", "html"]
+      "expected_for": [
+        "audio",
+        "chat",
+        "csv",
+        "doc",
+        "docx",
+        "dwg",
+        "dxf",
+        "email",
+        "html",
+        "image",
+        "pdf",
+        "presentation",
+        "text",
+        "video",
+        "xls",
+        "xlsx"
+      ]
     }
   },
   "aggregation": {

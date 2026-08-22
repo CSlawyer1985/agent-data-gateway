@@ -3,6 +3,32 @@
 > 迭代日志的详情来源。README「迭代日志」章节保存要点，本文件保存每次迭代的完整记录。
 > 约定：每次迭代完成后由 Claude 自动追加本文件 + 同步 README「迭代日志」要点 + 推送。
 
+## Unreleased
+
+### 架构审计（keel）：4 处载重缺陷
+
+对 v0.2.0 做载重面审计，按仓库自己声明的优先级取证（ADR 0001：`models/*.json` 为结构契约规范源，
+`docs/spec/` 定语义与不变量，README 只是投影）。发现并修复 4 处，每处都补了可证伪守卫：
+
+| # | 缺陷 | 证据 | 修复 |
+|---|------|------|------|
+| 1 | **质量维度对 doc/xls/dwg/presentation 不压级**：`expected_for` 遗漏这些 kind，按 spec 05 的语义等于声明"它们不需要提取文本"。同一份「文本提取失败 + 锚定失败」的建议维度，pdf/docx/xlsx 定稿为 `fail`，而 **doc/xls/dwg 定稿为 `pass`** | 代码实证：`aggregate_overall` 对 doc/xls/dwg 返回 pass | 补齐三个内容维度的 expected_for；新增守卫「凡有 parse 链的 kind，text_extraction 与 source_anchoring 必须在 expected_for 内」+ 负向对照 |
+| 2 | **可靠读取判定有三处绕过包级权威**：`adg report`、dispatcher 渲染索引、以及渲染索引里「无 rendition 即 reliable=False」的硬编码 | `adg status` 说 40、`adg report` 说 **39**，同一个包两个答案 | 三处统一改用 `quality.reliably_read_ids`；新增结构守卫：除 `gateway/quality.py` 外任何模块出现 `reliably_read_item(` 即失败 |
+| 3 | **Agent 消费的 `--json` 输出无契约版本**：下游无从判定契约是否变过；且原有 `API_VERSION = __version__` 把契约绑在发布版本上，等于没有版本 | status/list/search/get 四个 JSON 均无版本字段 | 新增独立的 `AGENT_API_VERSION`（当前 `"1"`），六个操作统一盖戳；测试断言它**不等于**发布版本 |
+| 4 | **索引需重建但输出目录被占用时查询整个失败**：parse 期间所有检索不可用，而此时往往已有一份可用的旧索引 | 持锁重建实证抛 `ConcurrentWriteError` | 降级用既有索引并置 `index.stale=true` + `stale_index_caveat`，CLI 同步提示；既有索引都没有时仍显性失败——那时无话可说 |
+
+关于 #1 的契约定性：这是 ADR 0001 第 5 条意义上的**一致性修正**（实现早已产出这些 kind 的 rendition，
+规则文件遗漏了它们），不是破坏性变更——持久化结构未变，`schema_version` 保持 `0.1`。
+影响是未来定稿更严格：真实包里 `.doc` 的 overall 从 `pass` 降为 `pass_with_warnings`
+（doc_lite 确实没有版面保留），覆盖率不变（`reliably_read` 走 fitness 而非 overall）。
+
+### 验证结果
+
+- `python3 -m unittest discover -s tests`：**151 项通过**（新增 10 项：质量覆盖守卫 3、单一权威守卫 2、
+  契约版本 2、陈旧索引降级 3）。
+- `adg verify`：27/28、0 失败。
+- 真实材料包：41 items 全量入账、40/41 可靠读取（97.56%）不变；`adg report` 与 `adg status` 一致。
+
 ## v0.2.0（2026-08-23）
 
 本版把摄取产物接到 Agent 手上（检索 + 回溯），把真实材料包的覆盖率从 79.4% 推到 97.6%，

@@ -47,6 +47,8 @@ def run(args) -> int:
         print(f"  {i}. {h['package_relative_path']} — {format_locator(h['locator'])}〔{flags}〕")
         print(f"     {h['snippet']}")
         print(f"     {h['element_id']}  parser={h['parser']} quality={h['quality']}")
+    if result.get("stale_index_caveat"):
+        print(f"  ⚠️ {result['stale_index_caveat']}")
     if result.get("candidate_cap_reached"):
         print("  ⚠️ 命中过多，LIKE 降级模式只在候选窗口内排序——结果可能不是全局最佳，请缩小检索词")
     if result.get("coverage_caveat"):

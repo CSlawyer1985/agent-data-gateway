@@ -1,6 +1,7 @@
 """质量模型聚合 + fitness（spec 05）。"""
 
 import unittest
+from pathlib import Path
 
 from gateway import quality
 
@@ -100,6 +101,78 @@ class DerivedCoverageTest(unittest.TestCase):
         child = self._Item("sha256:y", "image", "parsed", derived_from={"source_id": "sha256:x"})
         ids = quality.reliably_read_ids([parent, child], lambda sid: self.OK_Q if sid == "sha256:y" else [])
         self.assertNotIn("sha256:x", ids)
+
+
+class QualitySpecCoverageGuard(unittest.TestCase):
+    """守卫：凡是有 parse 链的 kind，内容类维度必须在 quality spec 的 expected_for 内。
+
+    spec 05 规定 expected_for 的语义是「该 kind 不需要此维度（不压级）」。因此一个有
+    parser 的格式若不在 expected_for 里，它的 text_extraction=fail 会被聚合规则**静默丢弃**，
+    overall 照样报 pass——正是本项目要防的假装成功。这条守卫让该缺口无法再潜伏。
+    """
+
+    CONTENT_DIMS = ("text_extraction", "source_anchoring")
+
+    def _parse_kinds(self):
+        from gateway import routing
+
+        return {rule.kind for rule in routing.ROUTE_RULES if rule.action == "parse"}
+
+    def test_every_parsed_kind_is_graded_on_content_dimensions(self):
+        gaps = []
+        for kind in sorted(self._parse_kinds()):
+            expected = quality.expected_dimensions(kind)
+            for dim in self.CONTENT_DIMS:
+                if dim not in expected:
+                    gaps.append(f"{kind}/{dim}")
+        self.assertEqual([], gaps, f"这些 kind 有 parser 但该维度不压级，失败会被静默丢弃: {gaps}")
+
+    def test_guard_detects_a_planted_gap(self):
+        """负向对照：人为拿掉一个 kind，守卫必须报出来——否则它只是条永远绿的死断言。"""
+        spec = quality.load_spec()
+        spec["dimensions"]["text_extraction"]["expected_for"] = [
+            k for k in spec["dimensions"]["text_extraction"]["expected_for"] if k != "pdf"
+        ]
+        self.assertNotIn("text_extraction", quality.expected_dimensions("pdf", spec))
+
+    def test_failure_is_never_dropped_for_a_parsed_kind(self):
+        """端到端语义：任何有 parser 的 kind，文本提取失败都必须压到 fail。"""
+        dims = {"discovery": "pass", "type_detection": "pass", "text_extraction": "fail"}
+        for kind in sorted(self._parse_kinds()):
+            with self.subTest(kind=kind):
+                self.assertEqual("fail", quality.aggregate_overall(kind, dims))
+
+
+class SingleReliabilityAuthorityGuard(unittest.TestCase):
+    """守卫：可靠读取判定只有一个权威入口。
+
+    reliably_read_item 只看 item 自身的 rendition，而 transform 型原件（扫描 PDF→页位图、
+    DWG→DXF、视频→抽帧、PST→EML）的内容在派生物里。任何消费点绕过包级的
+    reliably_read_ids 直接用 item 级判定，就会与 adg status 给出不同答案——
+    本仓库已经因此出过一次 report 说 39、status 说 40 的分歧。
+    """
+
+    ALLOWED = {"gateway/quality.py"}  # 定义处与包级实现本身
+
+    def test_only_quality_module_calls_item_level_judgment(self):
+        root = Path(__file__).resolve().parent.parent
+        offenders = []
+        for path in sorted(root.glob("gateway/**/*.py")) + sorted(root.glob("packs/**/*.py")):
+            rel = path.relative_to(root).as_posix()
+            if rel in self.ALLOWED or "__pycache__" in rel:
+                continue
+            text = path.read_text(encoding="utf-8")
+            if "reliably_read_item(" in text:
+                offenders.append(rel)
+        self.assertEqual(
+            [], offenders,
+            f"这些模块绕过包级判定直接用 item 级 reliably_read_item，会与 adg status 分歧: {offenders}",
+        )
+
+    def test_guard_would_catch_a_bypass(self):
+        """负向对照：确认这条守卫扫的是真实调用点，而不是永远匹配不到的字符串。"""
+        quality_src = (Path(__file__).resolve().parent.parent / "gateway/quality.py").read_text(encoding="utf-8")
+        self.assertIn("reliably_read_item(", quality_src, "守卫的匹配串必须真实存在于代码中")
 
 
 if __name__ == "__main__":

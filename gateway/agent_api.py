@@ -17,12 +17,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from . import __version__
-from .errors import ADGError
-from .index import IndexStats, build_index, index_meta, open_index, resolve_element, search
+from .errors import ADGError, ConcurrentWriteError
+from .index import (
+    IndexStats,
+    build_index,
+    index_meta,
+    index_path,
+    open_index,
+    resolve_element,
+    search,
+)
 from .manifest import default_out_dir, list_rendition_docs, load_manifest, mirror_relpath
 from .models import Item, PackageManifest
 from .quality import best_quality_rank, reliably_read_ids
+
+# Agent 消费的查询契约版本。独立于 adg 发布版本——发版不改契约就不动它，
+# 改了字段语义才递增，让下游有可判定的兼容依据（spec 10）。
+AGENT_API_VERSION = "1"
 
 _HEX_RE = re.compile(r"^[0-9a-f]{8,64}$")
 
@@ -41,6 +52,7 @@ class PackageView:
     _docs_cache: dict[str, list[dict]] = field(default_factory=dict)
     _dup_paths: dict[str, list[str]] | None = None
     _reliable_cache: set[str] | None = None
+    _index_stale: bool = False
 
     # ---------------- 生命周期 ----------------
 
@@ -65,11 +77,23 @@ class PackageView:
         self.close()
 
     def index(self, *, force: bool = False) -> sqlite3.Connection:
-        """按需构建并只读打开索引。构建失败时抛 ADGError，由调用方显性化。"""
+        """按需构建并只读打开索引。
+
+        索引需要重建、但输出目录正被 parse 之类的写入者占用时：若已有一份可读索引，
+        就用它并把 `stale=True` 显性带进结果——查询照常可用，但调用方知道它可能
+        缺最新解析产物。既有索引都没有时才失败，因为那时无话可说。
+        """
         if self._conn is not None and not force:
             return self._conn
         self.close()
-        self._index_stats = build_index(self.out_dir, force=force, manifest=self.manifest)
+        self._index_stale = False
+        try:
+            self._index_stats = build_index(self.out_dir, force=force, manifest=self.manifest)
+        except ConcurrentWriteError:
+            if not index_path(self.out_dir).is_file():
+                raise
+            self._index_stats = None
+            self._index_stale = True
         self._conn = open_index(self.out_dir)
         return self._conn
 
@@ -118,6 +142,7 @@ class PackageView:
         total = len(rows)
         window = rows[offset : offset + max(1, int(limit))]
         return {
+            "contract_version": AGENT_API_VERSION,
             "package_root_name": self.manifest.package_root_name,
             "package_id": self.manifest.package_id,
             "total": total,
@@ -153,6 +178,7 @@ class PackageView:
                 unreliable.append(entry)
         quality = self.manifest.quality
         return {
+            "contract_version": AGENT_API_VERSION,
             "package_root_name": self.manifest.package_root_name,
             "package_id": self.manifest.package_id,
             "overall": quality.get("overall"),
@@ -191,6 +217,7 @@ class PackageView:
             selected = max(docs, key=lambda d: self._rendition_rank(d))
 
         result: dict[str, Any] = {
+            "contract_version": AGENT_API_VERSION,
             "source_id": item.source_id,
             "package_relative_path": item.package_relative_path,
             "kind": item.kind,
@@ -253,9 +280,12 @@ class PackageView:
             all_renditions=all_renditions,
             path_prefix=path_prefix,
         )
+        result["contract_version"] = AGENT_API_VERSION
         result["package_root_name"] = self.manifest.package_root_name
         result["index"] = self.index_summary()
         result["coverage_caveat"] = self._coverage_caveat()
+        if self._index_stale:
+            result["stale_index_caveat"] = "输出目录正被其他任务写入，本次检索基于上一版索引，可能缺最新解析产物"
         return result
 
     # ---------------- 5. resolve_anchor ----------------
@@ -264,6 +294,7 @@ class PackageView:
         conn = self.index()
         matches = resolve_element(conn, element_id, rendition_id)
         return {
+            "contract_version": AGENT_API_VERSION,
             "element_id": element_id,
             "found": len(matches),
             "matches": matches,
@@ -308,6 +339,7 @@ class PackageView:
                 }
             )
         return {
+            "contract_version": AGENT_API_VERSION,
             "package_root_name": self.manifest.package_root_name,
             "total": len(entries),
             "all_items_accounted": self.manifest.integrity.get("all_items_accounted", False),
@@ -322,6 +354,7 @@ class PackageView:
         meta = index_meta(self._conn)
         return {
             "available": True,
+            "stale": self._index_stale,
             "engine": meta.get("engine"),
             "elements": int(meta.get("elements", 0)),
             "renditions": int(meta.get("renditions", 0)),
@@ -442,6 +475,3 @@ class PackageView:
 
 def open_package(package_path: Path | str, out_dir: Path | str | None = None) -> PackageView:
     return PackageView.open(package_path, out_dir)
-
-
-API_VERSION = __version__

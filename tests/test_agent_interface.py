@@ -296,6 +296,28 @@ class AgentApiTest(unittest.TestCase):
         clamped = self.view.get_document("合同笔记.txt", max_elements=2, offset=-5)["elements"]
         self.assertEqual([e["element_id"] for e in head], [e["element_id"] for e in clamped])
 
+    def test_every_operation_stamps_the_contract_version(self):
+        """Agent 消费的是这些 JSON：没有版本戳，下游无法判定契约是否变过。"""
+        from gateway.agent_api import AGENT_API_VERSION
+
+        results = [
+            self.view.get_ingestion_status(),
+            self.view.list_package_items(limit=1),
+            self.view.list_unresolved_items(),
+            self.view.get_document("合同笔记.txt", include_elements=False),
+            self.view.search_elements("核对", limit=1),
+            self.view.resolve_anchor("el_none"),
+        ]
+        for r in results:
+            self.assertEqual(AGENT_API_VERSION, r.get("contract_version"))
+
+    def test_contract_version_is_independent_of_release_version(self):
+        """契约版本绑到发布版本上就没有意义了——发版不改契约就不该动它。"""
+        from gateway import __version__
+        from gateway.agent_api import AGENT_API_VERSION
+
+        self.assertNotEqual(__version__, AGENT_API_VERSION)
+
     def test_no_absolute_path_leaks_in_any_result(self):
         payloads = [
             self.view.get_ingestion_status(),
@@ -307,6 +329,51 @@ class AgentApiTest(unittest.TestCase):
         for payload in payloads:
             text = json.dumps(payload, ensure_ascii=False)
             self.assertFalse(contains_absolute_path(text), "只读接口返回值泄漏了绝对路径")
+
+
+class StaleIndexDegradationTest(unittest.TestCase):
+    """索引需重建但输出目录被写占用：查询仍可用，但必须显性标注陈旧。
+
+    直接失败会让 parse 期间所有检索不可用（受管路径变贵）；不标注则是拿旧答案冒充新答案。
+    """
+
+    @classmethod
+    def setUpClass(cls):
+        cls.package, cls.out = built_package()
+
+    def test_search_degrades_to_stale_index_with_explicit_caveat(self):
+        from gateway.manifest import OutputWriteLock
+
+        build_index(self.out, force=True)
+        with OutputWriteLock(self.out):
+            with open_package(self.package, self.out) as view:
+                view.index(force=True)  # 强制重建 = 模拟索引过期
+                result = view.search_elements("核对", limit=1)
+                self.assertTrue(result["index"]["stale"])
+                self.assertIn("stale_index_caveat", result)
+
+    def test_fresh_index_is_not_marked_stale(self):
+        build_index(self.out, force=True)
+        with open_package(self.package, self.out) as view:
+            self.assertFalse(view.search_elements("核对", limit=1)["index"]["stale"])
+
+    def test_missing_index_under_lock_still_fails_loudly(self):
+        """既有索引都没有时无话可说，必须失败而不是假装查过。"""
+        import tempfile
+        from gateway.errors import ADGError
+        from gateway.index import index_path
+        from gateway.manifest import OutputWriteLock
+
+        target = index_path(self.out)
+        backup = target.with_suffix(".bak")
+        target.rename(backup)
+        try:
+            with OutputWriteLock(self.out):
+                with open_package(self.package, self.out) as view:
+                    with self.assertRaises(ADGError):
+                        view.search_elements("核对", limit=1)
+        finally:
+            backup.rename(target)
 
 
 if __name__ == "__main__":
