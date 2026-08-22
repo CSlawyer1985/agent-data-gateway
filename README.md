@@ -141,18 +141,34 @@ adg check                        # 验证这些 worker 在当前机器是否真�
 ## 安装
 
 ```bash
-pip install agent-data-gateway        # 编排器 + Core（纯 stdlib 轻依赖）
-# 或开发模式
-pip install -e .
+pip install agent-data-gateway   # 编排器 + Core（纯 stdlib，零硬依赖）
+adg setup --auto                 # 一条命令：自动选最快的源 + 装齐免系统依赖的 worker + 预下模型
 ```
+
+`adg setup --auto` 做三件事，不需要你懂任何一项：
+
+1. **自动选线路**——并发测速 pypi 官方 / 清华 / 阿里 / 腾讯 / 中科大，选最快的那个（结果缓存 7 天）。
+   直连官方就用官方，不硬塞镜像。显式 `--index-url` 或环境变量 `ADG_PIP_INDEX_URL` 永远优先。
+2. **只装该装的**——收无系统依赖、体积可接受的 worker；需要 Docker 或数 GB 模型的（docling/mineru/paddleocr/whisper）
+   不进一键档，装完会告诉你它们各自的一行安装命令。准入写在各 `worker.json` 的 `auto_install`，不是代码里的硬编码名单。
+3. **模型在安装阶段下好**——whisper 等 worker 声明 `network: false`，但模型是首次运行才下载的。
+   预热让那句声明成真；下载走自动选出的镜像（`HF_ENDPOINT`），线路全不通时直接给出 ModelScope 手动路径，
+   而不是让你第一次解析音视频时莫名卡住。
+
+装完会打印一张「本机现在能读什么、还差什么、缺的那个怎么补」的表——**装到什么程度，就诚实报到什么程度**。
+
+> **已知门槛**：这一步仍然需要本机有 Python 3.10+ 并会开终端。对完全不碰命令行的用户，
+> 单文件可执行（免 Python）与图形界面尚未提供，见「迭代日志」中的规划。
+
+开发模式：`pip install -e .`
 
 ## 快速开始
 
 ```bash
+adg setup --auto             # 一键装齐（自动选源 + 预下模型），不熟命令行就用这个
 adg check                    # 环境检测：Python/容器/GPU + 各 worker 可用性
 adg routes                   # 总路由表：格式 → 条件 → 工具 → 原因
-adg setup --lite             # 安装轻量 worker（pypdf/trafilatura/ezdxf/extract-msg）
-# adg setup --all            # 含重型 worker（docling/mineru/whisper/paddleocr）
+# adg setup --worker whisper # 按需单装重型 worker（音视频转写）
 adg scan ./案件材料           # 全量发现 → manifest（不解析内容）
 adg parse ./案件材料          # 解析（自动特征路由 + 降级）
 adg report ./案件材料         # 包级质量报告

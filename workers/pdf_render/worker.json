@@ -1,12 +1,33 @@
 {
   "name": "pdf_render",
   "version": "0.1.0",
-  "handles": [{"kind": "pdf", "role": "transform"}],
-  "requirements": {"min_ram_mb": 1024, "gpu": "none", "backend": ["subprocess"], "network": false},
-  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "pypdfium2"},
-  "python_requires": ["pypdfium2", "pillow"],
+  "handles": [
+    {
+      "kind": "pdf",
+      "role": "transform"
+    }
+  ],
+  "requirements": {
+    "min_ram_mb": 1024,
+    "gpu": "none",
+    "backend": [
+      "subprocess"
+    ],
+    "network": false
+  },
+  "subprocess": {
+    "adapter": "adapter.py",
+    "venv": ".venv",
+    "probe_import": "pypdfium2"
+  },
+  "python_requires": [
+    "pypdfium2",
+    "pillow"
+  ],
   "weight": "light",
   "maturity": "implemented",
   "license": "Apache-2.0 / BSD-3-Clause（PDFium）",
-  "notes": "扫描 PDF → 页面位图（transform），位图回灌走 image 链做 OCR。纯 wheel、无系统依赖（不需要 poppler/ghostscript/Docker），是无 GPU、无容器机器上扫描件的本地兜底路径。options: dpi（默认 200）、max_pages（默认 50）、pages（如 1-5,8）。"
+  "notes": "扫描 PDF → 页面位图（transform），位图回灌走 image 链做 OCR。纯 wheel、无系统依赖（不需要 poppler/ghostscript/Docker），是无 GPU、无容器机器上扫描件的本地兜底路径。options: dpi（默认 200）、max_pages（默认 50）、pages（如 1-5,8）。",
+  "auto_install": true,
+  "auto_install_reason": "扫描 PDF 的本地位图链，纯 wheel 无系统依赖"
 }

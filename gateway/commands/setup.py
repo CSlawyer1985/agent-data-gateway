@@ -17,13 +17,13 @@ import subprocess
 import sys
 from pathlib import Path
 
+from .. import mirrors
 from ..gap import analyze_manifest_gaps
 from ..hardware import detect_environment
 from ..manifest import load_manifest
 from ._common import build_registry, out_hint, resolve_out_dir, summary_line
 
-# 国内镜像示例：清华 https://pypi.tuna.tsinghua.edu.cn/simple · 阿里 https://mirrors.aliyun.com/pypi/simple/
-PIP_INDEX_ENV = "ADG_PIP_INDEX_URL"
+PIP_INDEX_ENV = mirrors.PIP_INDEX_ENV
 
 _BINARY_HINTS = {
     "officecli": "brew install officecli",
@@ -40,11 +40,12 @@ _BINARY_HINTS = {
 
 
 def resolve_index_url(cli_value: str | None) -> str | None:
-    """pip 索引解析：CLI --index-url > 环境变量 ADG_PIP_INDEX_URL > pip 默认。
+    """纯优先级解析：CLI --index-url > 环境变量 > None。**不联网**。
 
-    只影响 setup 安装动作（编排器侧子进程），不写全局 pip 配置、不影响 worker 沙箱。
+    自动测速在 run() 里进行（见 mirrors.resolve_pip_index），这样这个函数保持可单测、
+    测试套件也不会去连网。只影响 setup 安装动作，不写全局 pip 配置、不影响 worker 沙箱。
     """
-    return cli_value or os.environ.get(PIP_INDEX_ENV) or None
+    return mirrors.resolve_pip_index(cli_value, probe=False).url
 
 
 def build(sub) -> None:
@@ -55,18 +56,32 @@ def build(sub) -> None:
     g.add_argument("--lite", action="store_true", help="仅轻量 worker（weight=light）")
     g.add_argument("--package", help="按材料包诊断缺口，只装本包需要且缺失的（推荐）")
     g.add_argument("--missing", action="store_true", help="用最近一次 scan 的 manifest 诊断缺口安装")
+    g.add_argument("--auto", action="store_true",
+                   help="一键装齐所有免系统依赖的 worker（推荐给不熟悉命令行的用户）")
     p.add_argument("--out", help="输出目录（--package 时定位 manifest）")
     p.add_argument("--dry-run", action="store_true", help="只打印将执行的操作")
     p.add_argument("--yes", action="store_true", help="跳过确认提示")
     p.add_argument(
         "--index-url",
-        help=f"pip 索引 URL（如清华镜像）。未指定时读环境变量 {PIP_INDEX_ENV}；两者皆空用 pip 默认源",
+        help=f"pip 索引 URL。未指定时读环境变量 {PIP_INDEX_ENV}；两者皆空则自动测速选最快的源",
     )
+    p.add_argument("--no-probe", action="store_true", help="不自动测速选源，直接用 pip 默认源")
+    p.add_argument("--no-models", action="store_true", help="跳过模型预热（音视频转写首次使用时会现下）")
     p.set_defaults(handler=run)
 
 
 def run(args) -> int:
-    index_url = resolve_index_url(getattr(args, "index_url", None))
+    route = mirrors.resolve_pip_index(
+        getattr(args, "index_url", None), probe=not getattr(args, "no_probe", False)
+    )
+    index_url = route.url
+    print(f"  软件源: {index_url or 'pip 默认（pypi.org）'}（{route.source}）")
+    if not route.reachable:
+        print("  ⚠️ 所有候选源都探测失败——网络可能不通，安装大概率会失败")
+
+    if getattr(args, "auto", False):
+        return _setup_auto(args, index_url)
+
     # ---- 包级缺口安装 ----
     if args.package or args.missing:
         return _setup_from_gap(args, index_url)
@@ -85,7 +100,133 @@ def run(args) -> int:
     if args.worker and not targets:
         summary_line(f"未找到外部 worker: {args.worker}")
         return 2
-    return _install_targets(targets, args.dry_run, args.yes, index_url)
+    rc = _install_targets(targets, args.dry_run, args.yes, index_url)
+    # 模型预热同样适用于 --worker/--all/--lite：装完就把模型下好，
+    # 免得第一次解析在一个声称 network=false 的 worker 里静默等下载
+    if not args.dry_run and not getattr(args, "no_models", False):
+        _prefetch_models(build_registry(), detect_environment(), only={w.name for w in targets})
+    return rc
+
+
+def _setup_auto(args, index_url: str | None) -> int:
+    """一键装齐所有免系统依赖的 worker。
+
+    面向不熟悉命令行的用户：不用先搞懂 --lite/--all 的区别，也不用知道哪些 worker 需要
+    brew/Docker。装完给一张「现在能读什么、还差什么」的表——装到什么程度就诚实报到什么程度。
+    """
+    registry = build_registry()
+    installable, needs_system, opt_in = [], [], []
+    for w in sorted(registry.workers.values(), key=lambda x: x.name):
+        if w.backend == "inproc":
+            continue
+        if _in_auto_bundle(w):
+            installable.append(w)
+        elif w.python_requires and w.auto_install is False:
+            opt_in.append(w)   # 能 pip 装，但体积/依赖不适合默认档
+        else:
+            needs_system.append(w)
+
+    env = detect_environment()
+    todo = [w for w in installable if not registry.availability(w, env)[0]]
+    already = len(installable) - len(todo)
+    print(f"  免系统依赖的 worker: {len(installable)} 个（已可用 {already}，待装 {len(todo)}）")
+    if not todo:
+        summary_line("所有免系统依赖的 worker 都已可用")
+    else:
+        rc = _install_targets(todo, args.dry_run, args.yes, index_url)
+        if rc != 0 and not args.dry_run:
+            print("  ⚠️ 部分 worker 安装失败，下方能力表已反映实际结果")
+
+    if not args.dry_run and not getattr(args, "no_models", False):
+        _prefetch_models(registry, detect_environment())
+
+    _print_capability_summary(registry, needs_system, opt_in)
+    return 0
+
+
+def _prefetch_models(registry, env, only: set[str] | None = None) -> None:
+    """把「首次运行才下模型」提前到安装阶段。
+
+    whisper 等 worker 声明 network=false，但模型是运行时下载的——不预热的话，第一次解析
+    音视频会在一个声称不联网的 worker 里静默等待下载。预热让那句声明成真。
+    """
+    import json as _json
+
+    targets = []
+    for w in sorted(registry.workers.values(), key=lambda x: x.name):
+        if not w.manifest_path:
+            continue
+        manifest = _json.loads(w.manifest_path.read_text(encoding="utf-8"))
+        prefetch = manifest.get("prefetch")
+        if only is not None and w.name not in only:
+            continue
+        if prefetch and registry.availability(w, env)[0]:
+            targets.append((w, prefetch))
+    if not targets:
+        return
+
+    model_env, route = mirrors.model_download_env()
+    print(f"\n  模型线路: {route.url or 'HuggingFace 官方'}（{route.source}）")
+    if not route.reachable:
+        print(f"  ⚠️ {mirrors.MODELSCOPE_HINT}")
+        return
+    for w, prefetch in targets:
+        venv_python = w.manifest_path.parent / (".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python")
+        if not venv_python.is_file():
+            continue
+        size = prefetch.get("approx_size") or "未知大小"
+        print(f"  {w.name}: 预热模型（{size}），首次较慢...")
+        try:
+            subprocess.run([str(venv_python), "-c", prefetch["python"]],
+                           env=model_env, check=True, timeout=3600)
+            print(f"  {w.name}: 模型就绪")
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
+            print(f"  ⚠️ {w.name}: 模型预热失败（{type(e).__name__}）——首次解析时会重试下载")
+
+
+def _in_auto_bundle(w) -> bool:
+    """一键档的准入：worker.json 显式声明优先，未声明时按「无系统依赖且轻量」推导。
+
+    显式声明放在 worker.json 而不是这里硬编码——与路由表同样的纪律：能力事实归清单，
+    代码只执行规则。
+    """
+    if w.auto_install is not None:
+        return bool(w.auto_install)
+    if not w.python_requires:
+        return False          # 需要系统二进制
+    if w.backend == "docker":
+        return False
+    return w.weight == "light"
+
+
+def _print_capability_summary(registry, needs_system, opt_in=()) -> None:
+    env = detect_environment()
+    missing = [(w, _BINARY_HINTS.get(w.name, "见 worker.json notes")) for w in needs_system
+               if not registry.availability(w, env)[0]]
+    print("\n  ── 本机能力 ──")
+    usable = [w.name for w in registry.workers.values() if registry.availability(w, env)[0]]
+    print(f"  可用 worker {len(usable)} 个；内置 lite parser 无需安装即可读 txt/md/csv/html/docx/xlsx/pptx/邮件/聊天记录")
+    if missing:
+        print(f"  还差 {len(missing)} 个需要系统工具的 worker（不装也能用，只是这些格式读不了）：")
+        for w, hint in missing:
+            print(f"    · {w.name}: {hint}")
+    if opt_in:
+        print(f"  另有 {len(opt_in)} 个重型 worker 未进一键档（体积大或需 Docker），需要时单独装：")
+        for w in opt_in:
+            reason = _auto_install_reason(w)
+            print(f"    · adg setup --worker {w.name}{('  —— ' + reason) if reason else ''}")
+    print("  用 adg check 看完整清单，adg doctor <材料包> 按实际材料诊断该补哪个")
+
+
+def _auto_install_reason(w) -> str:
+    import json as _json
+
+    if not w.manifest_path:
+        return ""
+    try:
+        return _json.loads(w.manifest_path.read_text(encoding="utf-8")).get("auto_install_reason", "")
+    except (OSError, ValueError):
+        return ""
 
 
 def _setup_from_gap(args, index_url: str | None) -> int:

@@ -47,6 +47,9 @@ class WorkerInfo:
     maturity: str = "experimental"
     license: str | None = None
     weight: str = "heavy"  # light / heavy
+    # 是否进 `adg setup --auto` 的一键档：面向不熟悉命令行的用户，只收无系统依赖、
+    # 体积可接受、装了就直接提升可读格式的 worker。缺省由 weight/docker/二进制依赖推导。
+    auto_install: bool | None = None
     notes: str = ""
     # inproc
     parse_fn: LiteParseFn | None = None
@@ -121,6 +124,7 @@ class WorkerRegistry:
             maturity=spec.get("maturity", "experimental"),
             license=spec.get("license"),
             weight=spec.get("weight", "heavy"),
+            auto_install=spec.get("auto_install"),
             notes=spec.get("notes", ""),
             adapter_path=(manifest_path.parent / sub.get("adapter", "adapter.py")) if sub else None,
             venv_python=(manifest_path.parent / sub.get("venv", ".venv") / ("Scripts/python.exe" if os.name == "nt" else "bin/python")) if sub else None,

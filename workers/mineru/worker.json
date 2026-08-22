@@ -1,13 +1,35 @@
 {
   "name": "mineru",
   "version": "0.1.0",
-  "handles": [{"kind": "pdf", "role": "parse"}],
-  "requirements": {"min_ram_mb": 8192, "gpu": "optional", "backend": ["subprocess"], "network": false},
-  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "mineru"},
-  "docker": {"image": "adg-worker-mineru:0.1.0"},
-  "python_requires": ["mineru[core]"],
+  "handles": [
+    {
+      "kind": "pdf",
+      "role": "parse"
+    }
+  ],
+  "requirements": {
+    "min_ram_mb": 8192,
+    "gpu": "optional",
+    "backend": [
+      "subprocess"
+    ],
+    "network": false
+  },
+  "subprocess": {
+    "adapter": "adapter.py",
+    "venv": ".venv",
+    "probe_import": "mineru"
+  },
+  "docker": {
+    "image": "adg-worker-mineru:0.1.0"
+  },
+  "python_requires": [
+    "mineru[core]"
+  ],
   "weight": "heavy",
   "maturity": "implemented",
   "license": "AGPL-3.0（隔离进程使用）",
-  "notes": "扫描/复杂版面 PDF 首选（多栏/表格/公式/中英混排/印章生态）。安装重：pip install 'mineru[core]' 后需 mineru-models-download 下载模型。适配器调 MinerU CLI 产物的 content_list.json。未经本机实测。"
+  "notes": "扫描/复杂版面 PDF 首选（多栏/表格/公式/中英混排/印章生态）。安装重：pip install 'mineru[core]' 后需 mineru-models-download 下载模型。适配器调 MinerU CLI 产物的 content_list.json。未经本机实测。",
+  "auto_install": false,
+  "auto_install_reason": "需要 Docker 镜像且模型数 GB"
 }

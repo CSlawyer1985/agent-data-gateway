@@ -2,18 +2,51 @@
   "name": "anydoc",
   "version": "0.1.0",
   "handles": [
-    {"kind": "doc", "role": "parse"},
-    {"kind": "docx", "role": "parse"},
-    {"kind": "xls", "role": "parse"},
-    {"kind": "xlsx", "role": "parse"},
-    {"kind": "presentation", "role": "parse"},
-    {"kind": "csv", "role": "parse"}
+    {
+      "kind": "doc",
+      "role": "parse"
+    },
+    {
+      "kind": "docx",
+      "role": "parse"
+    },
+    {
+      "kind": "xls",
+      "role": "parse"
+    },
+    {
+      "kind": "xlsx",
+      "role": "parse"
+    },
+    {
+      "kind": "presentation",
+      "role": "parse"
+    },
+    {
+      "kind": "csv",
+      "role": "parse"
+    }
   ],
-  "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": false},
-  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "anydoc"},
-  "python_requires": ["firecrawl-anydoc"],
+  "requirements": {
+    "min_ram_mb": 512,
+    "gpu": "none",
+    "backend": [
+      "subprocess"
+    ],
+    "network": false
+  },
+  "subprocess": {
+    "adapter": "adapter.py",
+    "venv": ".venv",
+    "probe_import": "anydoc"
+  },
+  "python_requires": [
+    "firecrawl-anydoc"
+  ],
   "weight": "light",
   "maturity": "implemented",
   "license": "MIT（Firecrawl anydoc，Rust 实现）",
-  "notes": "14 种办公格式 → 结构化文档模型（Rust，无 ML 模型、无系统依赖、毫秒级）。在 ADG 里的定位：①补齐 RTF/EPUB/ODS/ODP/.docm/.pptm/.xlsb/.pps 等本项目此前无 parser 的格式；②作为 lite parser 之后、LibreOffice/Docling 之前的零依赖第二意见。不接 PDF——anydoc 的 PDF 只出 Markdown，拿不到页码锚点，比现有 pypdf/pdfplumber 链更弱。合并单元格由 grid 的 origin/span 保留。"
+  "notes": "14 种办公格式 → 结构化文档模型（Rust，无 ML 模型、无系统依赖、毫秒级）。在 ADG 里的定位：①补齐 RTF/EPUB/ODS/ODP/.docm/.pptm/.xlsb/.pps 等本项目此前无 parser 的格式；②作为 lite parser 之后、LibreOffice/Docling 之前的零依赖第二意见。不接 PDF——anydoc 的 PDF 只出 Markdown，拿不到页码锚点，比现有 pypdf/pdfplumber 链更弱。合并单元格由 grid 的 origin/span 保留。",
+  "auto_install": true,
+  "auto_install_reason": "Office 全家桶与 RTF/EPUB/ODS/ODP，纯 wheel 无系统依赖"
 }

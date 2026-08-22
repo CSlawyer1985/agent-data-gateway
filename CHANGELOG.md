@@ -5,6 +5,34 @@
 
 ## Unreleased
 
+### 安装简化：`adg setup --auto` 与自动线路优化
+
+面向不熟悉命令行的目标用户（律师、文字工作者），把安装从"先搞懂 --lite/--all 的区别、
+再自己找镜像、再手动下模型"压成一条命令。
+
+- **新增 `gateway/mirrors.py`**：并发测速 pypi 官方/清华/阿里/腾讯/中科大，选最快的一个，
+  结果按 7 天 TTL 缓存到 `~/.cache/adg/mirrors.json`。
+  - 单次测速抖动可达 2 倍，因此每个候选测 2 次取最小值——**实测中这一条救了一次误判**：
+    hf-mirror 首探握手超时，二探正常（3.3s），单次探测会错误地告诉用户"模型线路全不通"。
+  - 优先级：`--index-url` > `ADG_PIP_INDEX_URL` > 自动测速 > pip 默认。显式指定永远压过自动。
+  - 官方最快时返回 `None` 用 pip 自带默认源，不硬塞镜像 URL。
+  - 全部候选不可达时 `Route.reachable=False` 并显性告警——本机实测 pypi 官方直连 SSL 握手失败，
+    自动测速正好绕开了这个坑。
+- **新增 `adg setup --auto`**：装齐"免系统依赖"的 worker（本机 10 个），跳过需 Docker
+  或数 GB 模型的（docling/mineru/paddleocr/whisper），结尾打印「现在能读什么、还差什么、
+  缺的怎么补」。准入声明在各 `worker.json` 的 `auto_install` 字段，**不是代码里的硬编码名单**
+  ——与路由表同样的纪律：能力事实归清单，代码只执行规则。
+- **模型预热**：whisper/paddleocr 的 `worker.json` 新增 `prefetch` 声明（命令 + 体积）。
+  这些 worker 声明 `network: false`，但模型是首次运行才下载的——**不预热的话，第一次解析音视频
+  会在一个声称不联网的 worker 里静默等待下载**。预热把下载提到安装阶段，让那句声明成真。
+  下载经自动选出的 `HF_ENDPOINT` 走镜像；线路全不通时直接给出 ModelScope 手动路径而不是干等。
+- 安全边界未放宽：模型下载在**安装阶段**完成，因此 worker 运行时的 `env_passthrough`
+  白名单（PATH/HOME/LANG/LC_ALL/TZ）保持不变——基线只收不放。
+- 新增 `tests/test_mirrors.py`（12 项，全部 mock 探测，测试套件不联网）。
+
+**未解决的门槛（已写入 README）**：仍需本机有 Python 3.10+ 且会开终端。
+单文件可执行（免 Python）与图形界面尚未提供——对完全不碰命令行的用户，这才是真正的墙。
+
 ### 架构审计（keel）：4 处载重缺陷
 
 对 v0.2.0 做载重面审计，按仓库自己声明的优先级取证（ADR 0001：`models/*.json` 为结构契约规范源，
@@ -24,8 +52,8 @@
 
 ### 验证结果
 
-- `python3 -m unittest discover -s tests`：**151 项通过**（新增 10 项：质量覆盖守卫 3、单一权威守卫 2、
-  契约版本 2、陈旧索引降级 3）。
+- `python3 -m unittest discover -s tests`：**163 项通过**（新增 22 项：质量覆盖守卫 3、单一权威守卫 2、
+  契约版本 2、陈旧索引降级 3、线路优化 12）。
 - `adg verify`：27/28、0 失败。
 - 真实材料包：41 items 全量入账、40/41 可靠读取（97.56%）不变；`adg report` 与 `adg status` 一致。
 

@@ -1,12 +1,33 @@
 {
   "name": "rapidocr",
   "version": "0.1.0",
-  "handles": [{"kind": "image", "role": "parse"}],
-  "requirements": {"min_ram_mb": 2048, "gpu": "none", "backend": ["subprocess"], "network": false},
-  "subprocess": {"adapter": "adapter.py", "venv": ".venv", "probe_import": "rapidocr_onnxruntime"},
-  "python_requires": ["rapidocr-onnxruntime", "pillow"],
+  "handles": [
+    {
+      "kind": "image",
+      "role": "parse"
+    }
+  ],
+  "requirements": {
+    "min_ram_mb": 2048,
+    "gpu": "none",
+    "backend": [
+      "subprocess"
+    ],
+    "network": false
+  },
+  "subprocess": {
+    "adapter": "adapter.py",
+    "venv": ".venv",
+    "probe_import": "rapidocr_onnxruntime"
+  },
+  "python_requires": [
+    "rapidocr-onnxruntime",
+    "pillow"
+  ],
   "weight": "heavy",
   "maturity": "implemented",
   "license": "Apache-2.0",
-  "notes": "图片 OCR（rapidocr-onnxruntime，基于 PaddleOCR 模型 + onnxruntime 推理）。paddleocr 在新 Python 无 wheel 时的友好替代；模型随包安装，无需联网下载。中文识别效果好。"
+  "notes": "图片 OCR（rapidocr-onnxruntime，基于 PaddleOCR 模型 + onnxruntime 推理）。paddleocr 在新 Python 无 wheel 时的友好替代；模型随包安装，无需联网下载。中文识别效果好。",
+  "auto_install": true,
+  "auto_install_reason": "图片/扫描件 OCR 是律师场景刚需，纯 wheel 无系统依赖"
 }

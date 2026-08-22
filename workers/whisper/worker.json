@@ -34,5 +34,12 @@
   "weight": "heavy",
   "maturity": "implemented",
   "license": "MIT",
-  "notes": "音视频转写 + 时间码锚点。options: {\"model\": \"small\", \"language\": \"zh\", \"diarize\": false}。模型首次下载需外网；国内网络 huggingface.co 直连慢/易断，建议从 ModelScope 下载 Systran/faster-whisper-small（config.json/model.bin/tokenizer.json/vocabulary.txt）到本地目录（如 workers/whisper/models/faster-whisper-small/，已被 .gitignore 忽略），parse 时 --worker-option model=<该目录绝对路径> 注入；缺省 \"small\" 会触发在线下载。说话人分离需另装 pyannote（options.diarize=true 时启用，未装则记录 warning）。有损转写：产物标注需对照原件核验。"
+  "notes": "音视频转写 + 时间码锚点。options: {\"model\": \"small\", \"language\": \"zh\", \"diarize\": false}。模型首次下载需外网；国内网络 huggingface.co 直连慢/易断，建议从 ModelScope 下载 Systran/faster-whisper-small（config.json/model.bin/tokenizer.json/vocabulary.txt）到本地目录（如 workers/whisper/models/faster-whisper-small/，已被 .gitignore 忽略），parse 时 --worker-option model=<该目录绝对路径> 注入；缺省 \"small\" 会触发在线下载。说话人分离需另装 pyannote（options.diarize=true 时启用，未装则记录 warning）。有损转写：产物标注需对照原件核验。",
+  "auto_install": false,
+  "auto_install_reason": "需要 ffmpeg 二进制，模型约 500MB，按需再装",
+  "prefetch": {
+    "python": "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')",
+    "approx_size": "约 500MB",
+    "note": "faster-whisper small 模型。经 HF_ENDPOINT 走镜像；线路不通时按 ModelScope 手动路径处理。"
+  }
 }
