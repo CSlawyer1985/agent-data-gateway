@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/CSlawyer1985/agent-data-gateway/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/version-v0.1.0-brightgreen" alt="Version"></a>
+  <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/version-v0.2.0-brightgreen" alt="Version"></a>
   <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
   <br>
   <b>让 Agent 获得可信、完整、可追溯的数据输入</b>
@@ -37,11 +37,11 @@
 
 开源生态（MinerU / Docling / Tika / Whisper / PaddleOCR 等）解决的是 **Document Parsing**——怎么把一个文件解析出来。本工具做 **Agent Ingestion**——怎么把一个案件材料包**可靠地**变成 Agent 可消费、可追溯、可信的数据。
 
-## 当前状态（v0.1.0）
+## 当前状态（v0.2.0）
 
 | 维度 | 状态 |
 |------|------|
-| **版本** | v0.1.0（2026-08-05，首次发布） |
+| **版本** | v0.2.0（2026-08-23）；v0.1.0 于 2026-08-05 首次发布 |
 | **编排器核心** | ✅ 完整可用：发现/安全展开/类型识别/特征路由/调度/质量/锚点/谱系/渲染，纯 stdlib |
 | **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
 | **外部 worker** | ✅ 22 个适配器随 wheel 发布（含 anydoc / pdf_render / dwgread），按环境安装；可用性以本机 `adg check` 为准 |
@@ -220,13 +220,13 @@ agent-data-gateway/
 | 2026-08-05 | v0.1.0 | 初始发布 | 编排器核心 + Legal Pack + 14 worker 适配器 + 10 份 spec + 验证矩阵 |
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
 | 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |
-| 2026-08-22 | Unreleased | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
-| 2026-08-23 | Unreleased | 缺陷/校准 | officecli 适配器实测校准：补 `--json`、按 `{success,data.results}` 解析、正文改段落级锚点、批注/修订经 anchoredTo 挂回段落；**查询失败不再退化成「0 条」而是显性失败**。同时修正 docx fixture 为合规 OOXML（此前缺 `document.xml.rels` 与 Content_Types 声明，Word 与任何规范实现都读不到那条批注，验证矩阵在测一个假场景）。L3 跨 parser 对齐首次真实通过：916 元素配对 score=1.0 |
-| 2026-08-23 | Unreleased | 能力/缺陷 | DWG 改为 dwgread 直读（dwg2dxf 中转的 DXF 结构性损坏，ezdxf.recover 亦拒绝加载），真实图纸提出 9777 条文字并带图层/句柄锚点；修复所有 adapter 用 UTF-8 硬解子进程输出（中文工具输出 GBK 一个字节即崩）。覆盖率 95.1%→**97.6%**，仅剩 CAJ 一项 |
-| 2026-08-22 | Unreleased | 能力/缺陷 | 加密 PDF 先试空用户口令（多数只是所有者限制，此前一律谎报"需密码"）；扫描 PDF 新增 pdf_render 本地位图链（无需 Docker/GPU）；接入 anydoc（Rust/MIT）补齐 RTF/EPUB/ODS/ODP 等格式；CAJ 从"类型无法识别"升级为带建议的显性未解决；修复"内容经派生物提取却报没读到"的核心误报。真实包覆盖率 88.6%→95.1% |
-| 2026-08-22 | Unreleased | 设计决策 | 确立「资料利用率」为一等目标：降级链（or 语义）之外增加增益轨（and 语义），多视角并行提取；分母靠廉价信号探测而非估计；多轨分歧只记录不裁决；成本靠探测门控/页级增益/身份缓存/条件升级/预算调度五机制，`--profile fast\|balanced\|quality` 是其上的界面。ADR 0002 + spec 11，实现未开始 |
-| 2026-08-22 | Unreleased | Agent 接口（P5） | 元素级检索索引（SQLite/FTS5，中文逐字切分，新鲜度指纹增量复用）+ `adg index/search/anchor/get`：命中带来源锚点、`quotable` 与未读全提示；查询逻辑单一权威（`gateway.agent_api`）；`adg verify` 20/22 → 25/27；新增 24 项测试 |
-| 2026-08-22 | Unreleased | 安装体验 | `adg setup` 支持 `--index-url`/`ADG_PIP_INDEX_URL` 国内镜像（不污染全局 pip 配置）；whisper 模型 ModelScope 国内路径指引 + `--worker-option model=` 本地注入；`.gitignore` 忽略 worker 本地模型权重；真实材料包补装 5 个 worker 后覆盖率 34.3%→88.6% |
+| 2026-08-22 | v0.2.0 | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
+| 2026-08-23 | v0.2.0 | 缺陷/校准 | officecli 适配器实测校准：补 `--json`、按 `{success,data.results}` 解析、正文改段落级锚点、批注/修订经 anchoredTo 挂回段落；**查询失败不再退化成「0 条」而是显性失败**。同时修正 docx fixture 为合规 OOXML（此前缺 `document.xml.rels` 与 Content_Types 声明，Word 与任何规范实现都读不到那条批注，验证矩阵在测一个假场景）。L3 跨 parser 对齐首次真实通过：916 元素配对 score=1.0 |
+| 2026-08-23 | v0.2.0 | 能力/缺陷 | DWG 改为 dwgread 直读（dwg2dxf 中转的 DXF 结构性损坏，ezdxf.recover 亦拒绝加载），真实图纸提出 9777 条文字并带图层/句柄锚点；修复所有 adapter 用 UTF-8 硬解子进程输出（中文工具输出 GBK 一个字节即崩）。覆盖率 95.1%→**97.6%**，仅剩 CAJ 一项 |
+| 2026-08-22 | v0.2.0 | 能力/缺陷 | 加密 PDF 先试空用户口令（多数只是所有者限制，此前一律谎报"需密码"）；扫描 PDF 新增 pdf_render 本地位图链（无需 Docker/GPU）；接入 anydoc（Rust/MIT）补齐 RTF/EPUB/ODS/ODP 等格式；CAJ 从"类型无法识别"升级为带建议的显性未解决；修复"内容经派生物提取却报没读到"的核心误报。真实包覆盖率 88.6%→95.1% |
+| 2026-08-22 | v0.2.0 | 设计决策 | 确立「资料利用率」为一等目标：降级链（or 语义）之外增加增益轨（and 语义），多视角并行提取；分母靠廉价信号探测而非估计；多轨分歧只记录不裁决；成本靠探测门控/页级增益/身份缓存/条件升级/预算调度五机制，`--profile fast\|balanced\|quality` 是其上的界面。ADR 0002 + spec 11，实现未开始 |
+| 2026-08-22 | v0.2.0 | Agent 接口（P5） | 元素级检索索引（SQLite/FTS5，中文逐字切分，新鲜度指纹增量复用）+ `adg index/search/anchor/get`：命中带来源锚点、`quotable` 与未读全提示；查询逻辑单一权威（`gateway.agent_api`）；`adg verify` 20/22 → 25/27；新增 24 项测试 |
+| 2026-08-22 | v0.2.0 | 安装体验 | `adg setup` 支持 `--index-url`/`ADG_PIP_INDEX_URL` 国内镜像（不污染全局 pip 配置）；whisper 模型 ModelScope 国内路径指引 + `--worker-option model=` 本地注入；`.gitignore` 忽略 worker 本地模型权重；真实材料包补装 5 个 worker 后覆盖率 34.3%→88.6% |
 
 ## 许可证
 

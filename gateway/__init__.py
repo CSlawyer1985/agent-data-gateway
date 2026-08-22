@@ -4,6 +4,6 @@
 规范见 docs/spec/，冻结 Schema 见 models/。
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 SCHEMA_VERSION = "0.1"
 PROTOCOL_VERSION = "0.1"
