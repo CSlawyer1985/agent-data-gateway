@@ -50,3 +50,10 @@ worker → 编排器:  {"type":"parse_result","job_id":"...","status":"ok",
 2. worker 不得写 work_dir 之外的位置。
 3. worker 输出不可信：编排器必须校验片段结构、重算锚点 ID、定稿质量后才落盘。
 4. GPL 组件（extract-msg、LibreDWG 等）必须隔离为独立进程，不得以库形式链入编排器。
+
+## 编排器录取规则
+
+- 请求与每一条 progress/终态消息都按 `models/worker_protocol.v0.1.json` 校验；`job_id` 必须与请求一致，stdout 中的非 JSONL、未知字段或未知消息类型均按 `rejected` 失败。
+- subprocess 与 Docker 共用同一套真实 deadline 和 stdout+stderr 输出上限；静默 Worker 也必须能在 deadline 到达时被停止。
+- `fragment_path`、`output_files[].path`、附件路径必须是 `work_dir` 相对路径。编排器拒绝绝对路径、`..`、不存在的文件以及任一路径组件的符号链接；通过录取后才读取内容。
+- Docker 内的绝对产物路径只允许位于 `/adg-work`，进入宿主机前转换为相对路径并再次执行 containment 校验。

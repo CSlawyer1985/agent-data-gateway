@@ -3,6 +3,28 @@
 > 迭代日志的详情来源。README「迭代日志」章节保存要点，本文件保存每次迭代的完整记录。
 > 约定：每次迭代完成后由 Claude 自动追加本文件 + 同步 README「迭代日志」要点 + 推送。
 
+## Unreleased（2026-08-22）
+
+### 契约与恢复边界加固
+
+- Worker Protocol 运行时严格校验：拒绝错误 job ID、未知字段、非 JSONL 和不完整终态；subprocess/Docker 共用真实超时与 stdout+stderr 输出上限。
+- Worker 产物统一 containment：只接受 work_dir 内相对普通文件，拒绝绝对路径、`..`、缺失文件和 symlink 逃逸；fragment_path 在录取层安全读取。
+- Manifest/EvidenceDocument 读取时执行版本、机器 Schema、payload hash、package/rendition/source 身份校验；缺失引用显式失败。
+- 输出目录增加跨进程单写者锁与陈旧写入检测；原子写使用唯一临时文件、fsync 和 replace；下次 parse 自动收养校验通过的孤儿 rendition。
+- 修复 force 重跑后质量缓存未失效、derived_from 未持久化/定稿的问题。
+- 真实混合材料回归修复 `doc_lite`/`pptx_lite` 的 locator 契约漂移（`line`/`slide` → 规范 `paragraph`，PPTX 页码保留在 `attrs.slide`）。
+- 图片元数据兜底在未 OCR 时不再误标为可引用、可做版面分析。
+- `--force` 现在能刷新同一 rendition 的最新 run/质量/parser 非身份字段，并追加历史 lineage；普通重跑仍保持幂等复用。
+- wheel 现在包含全部 19 个外部 Worker 清单与 adapter；`adg verify` 增加安装产物 Worker 发现守卫。
+- 新增声明式总路由表 `gateway.routing.ROUTE_RULES` 和 `adg routes [--kind/--format] [--json]`；实际 Dispatcher 与查询视图共用同一权威，逐条展示识别格式、命中条件、动作、工具链与选择原因，并明确区分 parse / expand / unresolved。
+
+### 验证结果
+
+- `python3 -m unittest discover -s tests -v`：87 项通过。
+- 源码 `adg verify`：21/22 通过、0 失败、1 项因 officecli 不可用跳过。
+- 独立 wheel 安装验证：33 个 Worker 全部可发现，`adg setup --worker pypdf --dry-run` 可定位目标，安装态 `adg verify` 同样 21/22。
+- 真实材料包（23 个物理文件，展开/派生后 35 items）：全部入账；12/35 可靠读取（34.29%），5 项 unresolved、1 项显式 fail，其余能力缺口均保持 warning 而非假成功。
+
 ## v0.1.0（2026-08-05）
 
 ### 初始发布

@@ -44,8 +44,8 @@
 | **版本** | v0.1.0（2026-08-05，首次发布） |
 | **编排器核心** | ✅ 完整可用：发现/安全展开/类型识别/特征路由/调度/质量/锚点/谱系/渲染，纯 stdlib |
 | **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
-| **外部 worker** | ✅ 14 个适配器就绪，按环境安装（`adg check` 实测 25/33 可用；docling/mineru 等重型需按环境构建） |
-| **验证矩阵** | ✅ `adg verify` 20/21 通过（1 跳过为环境依赖项） |
+| **外部 worker** | ✅ 19 个适配器随 wheel 发布，按环境安装；可用性以本机 `adg check` 为准 |
+| **验证矩阵** | ✅ `adg verify` 21/22 通过（1 跳过为环境依赖项） |
 | **真实数据验证** | ✅ input 混合材料包（25 文件 / 13 类型 / 嵌套目录 / 压缩包）：全量入账、覆盖率 79.4%、失败项全部显性化 |
 | **云端扩展** | 📋 设计预留（远程 worker 后端、云端模型路由），未实现 |
 | **Extended Packs** | 📋 规划（CAD 深入/GIS/DICOM 等），未发布 |
@@ -93,30 +93,24 @@
 | **完整入账** | 递归发现 + 压缩包/邮件安全展开，每文件必有 item 或排除记录 | 文件遗漏无人知晓 |
 | **不可信输入安全模型** | ZIP bomb / 路径穿越 / 符号链接逃逸 / 宏 / PDF JavaScript / worker 资源耗尽，第一版即内置，拦截显性记录 | 恶意或损坏材料击穿管线 |
 | **三身份模型** | `source_id`（原件，跨 parser 稳定）/ `rendition_id`（解析产物）/ `run_id`（执行） | parser 升级后结果对比与追溯 |
-| **特征路由 + 降级链** | 按文档特征选最优 parser（如 PDF 数字→Docling、扫描→MinerU、加密→qpdf），不可用沿链回退并记录每级失败原因 | 拿最优工具处理最优场景，失败原因可诊断 |
+| **特征路由 + 降级链** | `gateway.routing.ROUTE_RULES` 同时驱动调度与 `adg routes` 总表；按文档特征选最优 parser，不可用沿链回退并记录每级失败原因 | 拿最优工具处理最优场景，失败原因可诊断，文档不与实现漂移 |
 | **质量多维化** | 八维质量（发现/类型/文本/版面/OCR/附件/元数据/锚定）+ fitness 五旗标（可检索/可提取/可引用/版面敏感/真伪鉴定） | 一份文件"能检索 ≠ 能引用"如实区分 |
 | **来源锚点** | 元素级定位：页码/坐标/表格单元/时间码/字段，引用可回溯原件 | 结论无法定位到证据位置 |
 | **处理谱系** | 每次解析记录 operation/tool/exit_code/哈希，链式可查 | 产物来源与处理历史不可追溯 |
 | **隐私保护** | 产物默认只含包内相对路径，绝对路径只在本地私有日志；输出前 scrub 兜底清洗 | 客户名、目录结构、磁盘位置不泄露 |
 
-## 格式范围（结合工作实际）
+## 格式范围与总路由表
 
-按律师与文字工作者真实材料类型组织。**本地已有的 worker 优先**，标"规划"的为扩展路径。
+项目不再在 README 里手工复制一份容易过期的 worker 链。实际调度和总表共用 `gateway.routing.ROUTE_RULES`：
 
-| 材料类型 | 常见文件 | 本地 worker（`adg check` 验证可用性） | 降级链 / 兜底 |
-|---------|---------|--------------------------------------|--------------|
-| 合同、判决书、证据 PDF | `.pdf`（数字/扫描/加密/混合） | docling、pdfplumber、pypdf、pdf_lite、qpdf（加密）、mineru（扫描 OCR） | 数字简单→Docling→pdfplumber→pypdf→pdf_lite；扫描→MinerU；加密→qpdf |
-| 合同/文书 Word | `.docx`、`.doc` | officecli（含修订/批注全量）、docx_lite、doc_lite | docx→officecli→docling；doc→doc_lite→docling |
-| 案件台账、财务表 | `.xlsx`、`.xls`、`.csv` | xlsx_lite（多工作表+单元格锚点）、xls、csv_lite | xlsx→docling；xls→docling |
-| 演示文稿 | `.pptx`、`.ppt` | pptx_lite、ppt_old（LibreOffice 转换） | pptx→ppt_old→docling |
-| 证据图片、截图、扫描页 | `.png/.jpg/.jpeg/.tif/.bmp/.webp/.psd` | rapidocr（OCR）、image_lite、paddleocr | paddleocr→rapidocr→image_lite |
-| 聊天记录导出 | 微信/QQ 文本导出 | chat_lite（会话/消息结构识别） | — |
-| 邮件及附件 | `.eml`、`.msg`、`.pst` | eml_lite（附件递归回灌）、extract_msg、libpff | 按格式细分链 |
-| 谈话录音、庭审/会议视频 | `.mp3/.wav/.m4a/.mp4/...` | whisper（转录+时间码）、video_frames（抽帧）、av_lite | 视频→抽帧→whisper→av_lite |
-| 工程图纸 | `.dwg`、`.dxf` | libredwg（转 DXF 结构）、dwg_render（位图渲染）、dxf_lite | dwg→libredwg→dwg_render；dxf→ezdxf→dxf_lite |
-| 材料包压缩包 | `.zip`、`.7z` | 安全展开（stdlib zipfile + py7zr） | 展开后成员各自走路由 |
-| 网页/文本 | `.html`、`.txt`、`.md` | trafilatura、html_lite、text_lite | — |
-| 未知格式 | `.caj`、其他 | 显性进 `unresolved_items`，标注原因 | 类型识别失败不假装成功 |
+```bash
+adg routes                       # 全部：扩展名、触发条件、动作、工具链、选择原因
+adg routes --kind pdf            # 查看 PDF 的加密/损坏/扫描/混合/数字分流
+adg routes --format .msg --json  # 查看单个格式，或让 Agent 读取 JSON
+adg check                        # 验证这些 worker 在当前机器是否真的可用
+```
+
+总表会区分 `parse`（内容解析）、`expand`（容器安全展开）和 `unresolved`（可识别但当前没有安全处理路径）。因此“识别到 `.rar`”不会被误报为“已经支持解析”；未知格式也不会猜测工具后假装成功。完整语义见 [路由策略](docs/spec/08-routing.md)。
 
 ## 本地最优：数据不出本机
 
@@ -152,6 +146,7 @@ pip install -e .
 
 ```bash
 adg check                    # 环境检测：Python/容器/GPU + 各 worker 可用性
+adg routes                   # 总路由表：格式 → 条件 → 工具 → 原因
 adg setup --lite             # 安装轻量 worker（pypdf/trafilatura/ezdxf/extract-msg）
 # adg setup --all            # 含重型 worker（docling/mineru/whisper/paddleocr）
 adg scan ./案件材料           # 全量发现 → manifest（不解析内容）
@@ -172,12 +167,13 @@ Claude Code 等 Agent 通过 Bash 调 `adg` 子命令（`adg status` 直接回�
 ```
 agent-data-gateway/
 ├── gateway/          # Core 编排器（纯 stdlib）：发现/调度/质量/锚点/谱系/CLI
-│   ├── commands/     # adg check/setup/scan/parse/report/status/list/verify
+│   ├── commands/     # adg check/routes/setup/scan/parse/report/status/list/verify
 │   └── selftest.py   # 验证矩阵（程序化 fixtures，无二进制资产）
 ├── packs/legal/      # Legal Pack：11 个 stdlib lite parser + 预检钩子
-├── workers/          # 14 个外部 worker 适配器（docling/mineru/whisper/... 各自 venv）
+├── workers/          # 19 个外部 worker 适配器（docling/mineru/whisper/... 各自 venv）
 ├── models/           # 冻结 Schema v0.1（EvidenceDocument/Manifest/WorkerProtocol/Quality/Security）
 ├── docs/spec/        # 10 份规格文档（00-09）
+├── docs/adr/         # 契约权威、写入所有权等架构决策记录
 ├── input/ scratch/ output/   # 三层目录契约
 └── pyproject.toml
 ```
@@ -203,6 +199,7 @@ agent-data-gateway/
 | 2026-08-05 | v0.1.0 | 初始发布 | 编排器核心 + Legal Pack + 14 worker 适配器 + 10 份 spec + 验证矩阵 |
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
 | 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |
+| 2026-08-22 | Unreleased | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
 
 ## 许可证
 

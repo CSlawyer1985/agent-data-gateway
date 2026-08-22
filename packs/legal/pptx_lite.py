@@ -4,7 +4,7 @@ pptx 与 docx 同为 OOXML（zip + drawingml/presentationml）。lite parser 仅
 幻灯片文本流与备注，不保留图形坐标/动画/版面位置（layout_sensitive_analysis=False）。
 slide 顺序按 presentation.xml 的 sldIdLst + rels 精确解析（失败降级为按文件名编号）。
 旧 .ppt（CFB 二进制）非 zip，触发 BadZipFile → raise，由编排器沿降级链转 docling。
-锚点：slide index（页码，从 1 起）。
+锚点：全局 paragraph index；所属幻灯片页码保存在 attrs.slide（从 1 起）。
 """
 
 from __future__ import annotations
@@ -135,6 +135,7 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
             blocks.append({"block_type": "section", "index": 0, "label": "元数据", "elements": meta_fields})
 
         total_chars = 0
+        paragraph_idx = 0
         for page_idx, sp in enumerate(slide_paths, start=1):
             try:
                 sroot = ET.fromstring(zf.read(sp))
@@ -143,10 +144,17 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
                 continue
             paras = _paragraphs(sroot)
             total_chars += sum(len(t) for t in paras)
-            elements = [
-                {"type": "paragraph", "text": t, "locator": {"system": "slide", "index": page_idx}}
-                for t in paras
-            ]
+            elements = []
+            for text in paras:
+                elements.append(
+                    {
+                        "type": "paragraph",
+                        "text": text,
+                        "locator": {"system": "paragraph", "index": paragraph_idx},
+                        "attrs": {"slide": page_idx},
+                    }
+                )
+                paragraph_idx += 1
             blocks.append({"block_type": "page", "index": page_idx, "elements": elements})
 
         # 演讲者备注

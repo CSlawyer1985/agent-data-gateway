@@ -4,7 +4,7 @@
 解码为纯文本，作为 docling 的轻量前置兜底。依赖 macOS（非跨平台），无 textutil 时 raise
 （dependency_missing），编排器沿降级链转 docling。
 textutil 输出纯文本，不保留表格/版面/元数据（layout_sensitive_analysis=False）。
-锚点：line index（行号，近似段落）。
+锚点：paragraph index（由 textutil 输出行近似为段落）。
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
         raw_lines = raw_lines[:max_lines]
 
     elements = [
-        {"type": "paragraph", "text": ln, "locator": {"system": "line", "index": i}}
+        {"type": "paragraph", "text": ln, "locator": {"system": "paragraph", "index": i}}
         for i, ln in enumerate(raw_lines, start=1)
     ]
     block = {"block_type": "section", "index": 0, "label": "正文", "elements": elements}

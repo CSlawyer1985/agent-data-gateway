@@ -7,12 +7,13 @@ from gateway.discover import discover_package
 from gateway.dispatcher import Dispatcher, ParseOptions
 from gateway.hardware import detect_environment
 from gateway.inventory import build_manifest, recompute_package_quality
-from gateway.manifest import list_rendition_docs, load_manifest, save_manifest
+from gateway.manifest import list_rendition_docs, load_manifest, load_rendition, save_manifest
 from gateway.privacy import contains_absolute_path
 from gateway.selftest import EXPECTED_DEDUP, EXPECTED_ITEMS_AFTER_SCAN, build_package
 from packs.legal import register_lite_parsers
 from packs.legal import chat_kind_refiner
 from gateway.workers import WorkerRegistry
+from gateway.workers import WorkerInfo
 
 
 class EndToEndTest(unittest.TestCase):
@@ -126,6 +127,126 @@ class EndToEndTest(unittest.TestCase):
         docx1 = next(it for it in m1.items if it.package_relative_path == "协议.docx")
         docx2 = next(it for it in m2.items if it.package_relative_path == "协议.docx")
         self.assertEqual(set(docx1.renditions), set(docx2.renditions))
+
+
+class QualityRefreshRegressionTest(unittest.TestCase):
+    def test_force_rerun_refreshes_best_quality_from_new_rendition(self):
+        import tempfile
+
+        from gateway import quality
+
+        with tempfile.TemporaryDirectory(prefix="adg-quality-refresh-") as d:
+            root = Path(d)
+            package = root / "package"
+            package.mkdir()
+            (package / "a.txt").write_text("source", encoding="utf-8")
+            out = root / "output"
+            discovery = discover_package(package, out)
+            manifest = build_manifest(discovery)
+            recompute_package_quality(manifest, reliably_read_ids=set())
+            save_manifest(manifest, out)
+
+            calls = {"count": 0}
+
+            def parse(_path, **_kwargs):
+                calls["count"] += 1
+                dims = {name: "pass" for name in quality.DIMENSIONS}
+                if calls["count"] == 1:
+                    dims["text_extraction"] = "fail"
+                return {
+                    "parser_name": "text_lite",
+                    "parser_version": "test",
+                    "content": {
+                        "blocks": [{
+                            "block_type": "section",
+                            "index": 0,
+                            "elements": [{
+                                "type": "paragraph",
+                                "text": f"rendition-{calls['count']}",
+                                "locator": {"system": "paragraph", "index": 0},
+                            }],
+                        }]
+                    },
+                    "quality_dims": dims,
+                }
+
+            registry = WorkerRegistry()
+            registry.register_lite(WorkerInfo(
+                name="text_lite", version="test", role="parse", kinds=["text"], formats=None,
+                requirements={}, backend="inproc", parse_fn=parse,
+            ))
+            Dispatcher(package, out, load_manifest(out), registry, env=self.env if hasattr(self, "env") else detect_environment(),
+                       options=ParseOptions(force=True, no_abs_log=True)).run()
+            first = next(item for item in load_manifest(out).items if item.package_relative_path == "a.txt")
+            self.assertEqual(first.best_quality, "fail")
+
+            Dispatcher(package, out, load_manifest(out), registry, env=detect_environment(),
+                       options=ParseOptions(force=True, no_abs_log=True)).run()
+            second = next(item for item in load_manifest(out).items if item.package_relative_path == "a.txt")
+            self.assertEqual(len(second.renditions), 2)
+            self.assertEqual(second.best_quality, "pass")
+            self.assertEqual(second.status, "parsed")
+
+    def test_force_rerun_refreshes_same_rendition_assessment(self):
+        import tempfile
+
+        from gateway import quality
+
+        with tempfile.TemporaryDirectory(prefix="adg-same-rendition-refresh-") as d:
+            root = Path(d)
+            package = root / "package"
+            package.mkdir()
+            (package / "a.txt").write_text("source", encoding="utf-8")
+            out = root / "output"
+            discovery = discover_package(package, out)
+            manifest = build_manifest(discovery)
+            recompute_package_quality(manifest, reliably_read_ids=set())
+            save_manifest(manifest, out)
+
+            calls = {"count": 0}
+
+            def parse(_path, **_kwargs):
+                calls["count"] += 1
+                dims = {name: "pass" for name in quality.DIMENSIONS}
+                if calls["count"] == 1:
+                    dims["text_extraction"] = "unknown"
+                return {
+                    "parser_name": "text_lite",
+                    "parser_version": "test",
+                    "content": {
+                        "blocks": [{
+                            "block_type": "section",
+                            "index": 0,
+                            "elements": [{
+                                "type": "paragraph",
+                                "text": "same content",
+                                "locator": {"system": "paragraph", "index": 0},
+                            }],
+                        }]
+                    },
+                    "quality_dims": dims,
+                }
+
+            registry = WorkerRegistry()
+            registry.register_lite(WorkerInfo(
+                name="text_lite", version="test", role="parse", kinds=["text"], formats=None,
+                requirements={}, backend="inproc", parse_fn=parse,
+            ))
+            env = detect_environment()
+            Dispatcher(package, out, load_manifest(out), registry, env=env,
+                       options=ParseOptions(force=True, no_abs_log=True)).run()
+            first_item = load_manifest(out).items[0]
+            first_doc = load_rendition(out, first_item.source_id, first_item.renditions[0])
+            self.assertEqual(first_doc["quality"]["overall"], "pass_with_warnings")
+
+            Dispatcher(package, out, load_manifest(out), registry, env=env,
+                       options=ParseOptions(force=True, no_abs_log=True)).run()
+            second_item = load_manifest(out).items[0]
+            second_doc = load_rendition(out, second_item.source_id, second_item.renditions[0])
+            self.assertEqual(second_item.renditions, first_item.renditions)
+            self.assertNotEqual(second_doc["run_id"], first_doc["run_id"])
+            self.assertEqual(second_doc["quality"]["overall"], "pass")
+            self.assertEqual(len(second_doc["lineage"]), 2)
 
 
 if __name__ == "__main__":

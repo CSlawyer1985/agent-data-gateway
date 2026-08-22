@@ -135,6 +135,17 @@
             "additionalProperties": true,
             "description": "容器成员来源（结构同 EvidenceDocument.source.origin）"
           },
+          "derived_from": {
+            "type": ["object", "null"],
+            "additionalProperties": true,
+            "description": "转换产物来源（source_id/tool/note），由编排器登记"
+          },
+          "detected_type": {
+            "type": ["object", "null"],
+            "additionalProperties": true,
+            "description": "scan 阶段类型识别结果，供 parse 路由复用"
+          },
+          "mtime": {"type": ["string", "null"]},
           "renditions": {"type": "array", "items": {"type": "string"}},
           "status": {
             "type": "string",

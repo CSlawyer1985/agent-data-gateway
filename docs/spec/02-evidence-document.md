@@ -25,6 +25,7 @@
 |------|-----------|-----------|
 | pdf / image | `page` | page_bbox（page + bbox，0-1000 归一化，左上原点） |
 | docx / text / html | `section` | paragraph（index） |
+| pptx | `page` | paragraph（全局 index；`attrs.slide` 保存幻灯片页码） |
 | xlsx / csv | `sheet` | cell（sheet + A1）/ row（index） |
 | chat | `message_group` | message（id / timestamp） |
 | audio / video | `segment` | timecode（start/end 秒） |
@@ -42,6 +43,11 @@
 5. 质量多维 + fitness：不允许只有单一分数。
 6. lineage 记录每次转换：谁提取的、哪个版本、是否经 OCR、输入输出哈希。
 7. `authenticity_assessment` 恒为 false——摄取 ≠ 取证。
+
+## 读取与兼容性
+
+- 每次读取必须按对应版本的机器 Schema 校验，并重算 `payload_sha256`、`rendition_id` 与 `source_sha256`；任何一项不一致都作为持久化事实损坏显式失败，不得静默跳过。
+- 当前运行时只接受 `schema_version="0.1"`。未来破坏性变更必须发布新版本 Schema、迁移说明和 ADR；不得把未知版本按当前模型宽松加载。
 
 ## 隐私
 

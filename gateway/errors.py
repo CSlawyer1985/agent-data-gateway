@@ -5,6 +5,18 @@ class ADGError(Exception):
     """编排器基础异常。"""
 
 
+class ContractViolation(ADGError, ValueError):
+    """公开协议或持久化 Schema 不满足约定。"""
+
+
+class DataIntegrityError(ContractViolation):
+    """持久化数据的身份、引用或 payload 哈希校验失败。"""
+
+
+class ConcurrentWriteError(ADGError):
+    """同一输出目录存在并发写入或写入期间状态已变化。"""
+
+
 class SecurityViolation(ADGError):
     """安全策略拦截（路径穿越、符号链接逃逸、超限等）。"""
 

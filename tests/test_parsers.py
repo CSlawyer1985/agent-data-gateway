@@ -1,8 +1,11 @@
 """lite parser 单元测试：各格式 fragment 契约 + 诚实降级标注。"""
 
+import io
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
+from unittest.mock import patch
 
 from gateway import anchor, magic, quality
 from gateway.errors import WorkerFailed
@@ -20,7 +23,7 @@ from tests.fixtures import (
     make_xlsx,
     make_zip_normal,
 )
-from packs.legal import chat_lite, csv_lite, docx_lite, dxf_lite, eml_lite, html_lite, image_lite, pdf_lite, text_lite, xlsx_lite
+from packs.legal import chat_lite, csv_lite, doc_lite, docx_lite, dxf_lite, eml_lite, html_lite, image_lite, pdf_lite, pptx_lite, text_lite, xlsx_lite
 
 
 def _parse(module, data: bytes, name: str, kind: str, fmt: str | None = None) -> dict:
@@ -31,6 +34,20 @@ def _parse(module, data: bytes, name: str, kind: str, fmt: str | None = None) ->
         return module.parse(p, kind=kind, format=fmt, options={}, limits={}, work_dir=p.parent)
     finally:
         p.unlink(missing_ok=True)
+
+
+def _make_minimal_pptx() -> bytes:
+    out = io.BytesIO()
+    slide = """<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+      <p:cSld><p:spTree><p:sp><p:txBody>
+        <a:p><a:r><a:t>标题</a:t></a:r></a:p>
+        <a:p><a:r><a:t>正文</a:t></a:r></a:p>
+      </p:txBody></p:sp></p:spTree></p:cSld>
+    </p:sld>"""
+    with zipfile.ZipFile(out, "w") as archive:
+        archive.writestr("ppt/slides/slide1.xml", slide)
+    return out.getvalue()
 
 
 class ParserContractTest(unittest.TestCase):
@@ -66,6 +83,27 @@ class ParserContractTest(unittest.TestCase):
         self.assertTrue(any("监管账户" in c["text"] for c in comments), comments)
         self.assertTrue(any(r["kind"] == "insert" for r in revisions), revisions)
         self.assertTrue(any(r["kind"] == "delete" for r in revisions), revisions)
+
+    def test_doc_lite_uses_schema_locator(self):
+        with patch("packs.legal.doc_lite.subprocess.run") as run:
+            run.return_value.returncode = 0
+            run.return_value.stdout = "第一段\n第二段\n"
+            run.return_value.stderr = ""
+            frag = _parse(doc_lite, b"dummy ole2", "a.doc", "doc")
+
+        self._assert_blocks(frag)
+        locators = [element["locator"] for block in frag["content"]["blocks"] for element in block["elements"]]
+        self.assertEqual([locator["system"] for locator in locators], ["paragraph", "paragraph"])
+
+    def test_pptx_lite_uses_schema_locator_and_keeps_slide(self):
+        frag = _parse(pptx_lite, _make_minimal_pptx(), "a.pptx", "presentation")
+        self._assert_blocks(frag)
+        elements = [element for block in frag["content"]["blocks"] for element in block["elements"]]
+        self.assertEqual([element["locator"] for element in elements], [
+            {"system": "paragraph", "index": 0},
+            {"system": "paragraph", "index": 1},
+        ])
+        self.assertEqual([element["attrs"]["slide"] for element in elements], [1, 1])
 
     def test_xlsx_lite_multi_sheet_and_formula(self):
         frag = _parse(xlsx_lite, make_xlsx(), "a.xlsx", "xlsx")
@@ -121,6 +159,8 @@ class ParserContractTest(unittest.TestCase):
         self._assert_blocks(frag)
         self.assertEqual(frag["quality_dims"]["ocr"], "unknown")
         self.assertFalse(frag["fitness"]["fact_extraction"])
+        self.assertFalse(frag["fitness"]["quotation"])
+        self.assertFalse(frag["fitness"]["layout_sensitive_analysis"])
 
     def test_dxf_lite_layers_and_text(self):
         frag = _parse(dxf_lite, make_dxf(), "a.dxf", "dxf")

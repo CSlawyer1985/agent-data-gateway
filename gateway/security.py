@@ -12,7 +12,7 @@ import stat
 import tarfile
 import zipfile
 from dataclasses import dataclass, field
-from pathlib import Path, PurePosixPath
+from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 _POLICY_PATH = Path(__file__).resolve().parent.parent / "models" / "security_policy.v0.1.json"
@@ -176,6 +176,38 @@ def safe_join(dest_dir: Path, member_name: str) -> Path:
         from .errors import SecurityViolation
 
         raise SecurityViolation(f"成员逃逸目标目录: {member_name!r}")
+    return target
+
+
+def resolve_worker_output(work_dir: Path, untrusted_path: str, *, require_file: bool = True) -> Path:
+    """把 worker 声明的相对路径录取为 work_dir 内的普通文件。
+
+    同时拒绝 POSIX/Windows 绝对路径、父目录穿越和任意路径组件中的符号链接。
+    worker 进程在协议终态后已被停止，因此校验通过后不会继续改写路径结构。
+    """
+    from .errors import SecurityViolation
+
+    if not isinstance(untrusted_path, str) or not untrusted_path or "\x00" in untrusted_path:
+        raise SecurityViolation("worker 产物路径为空或非法")
+    posix = PurePosixPath(untrusted_path.replace("\\", "/"))
+    windows = PureWindowsPath(untrusted_path)
+    if posix.is_absolute() or windows.is_absolute() or windows.drive:
+        raise SecurityViolation(f"worker 产物必须是 work_dir 相对路径: {untrusted_path!r}")
+    if any(part in ("..", "") for part in posix.parts):
+        raise SecurityViolation(f"worker 产物路径穿越: {untrusted_path!r}")
+
+    root = work_dir.resolve()
+    candidate = work_dir.joinpath(*posix.parts)
+    current = work_dir
+    for part in posix.parts:
+        current = current / part
+        if current.is_symlink():
+            raise SecurityViolation(f"worker 产物不得经过符号链接: {untrusted_path!r}")
+    target = candidate.resolve()
+    if target == root or root not in target.parents:
+        raise SecurityViolation(f"worker 产物逃逸 work_dir: {untrusted_path!r}")
+    if require_file and not target.is_file():
+        raise SecurityViolation(f"worker 声明的产物不存在或不是普通文件: {untrusted_path!r}")
     return target
 
 

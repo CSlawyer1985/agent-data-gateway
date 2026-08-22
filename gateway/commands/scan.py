@@ -9,7 +9,7 @@ from pathlib import Path
 
 from .. import inventory
 from ..discover import discover_package
-from ..manifest import MANIFEST_MD, atomic_write_text, load_manifest, render_manifest_md, save_manifest
+from ..manifest import MANIFEST_MD, OutputWriteLock, atomic_write_text, load_manifest, render_manifest_md, save_manifest
 from ..models import now_iso
 from ..privacy import RunLog
 from ._common import out_hint, print_json, resolve_out_dir, summary_line
@@ -69,6 +69,11 @@ def run(args) -> int:
         return 2
     out_dir = resolve_out_dir(args, package_path)
     out_dir.mkdir(parents=True, exist_ok=True)
+    with OutputWriteLock(out_dir):
+        return _run_locked(args, package_path, out_dir)
+
+
+def _run_locked(args, package_path: Path, out_dir: Path) -> int:
 
     run_log = RunLog(out_dir, "scan-" + now_iso().replace(":", ""), enabled=not args.no_abs_log)
     from packs.legal import chat_kind_refiner

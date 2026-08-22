@@ -2,35 +2,52 @@
 
 > 路由依据是**文档特征和任务目标**，不只是“最强 parser 是否能运行”。每种格式簇配置“特征路由 + 降级链”。
 
+## 权威来源与查询入口
+
+- `gateway.magic` 是格式识别事实的权威：先看魔数/容器/内容特征，扩展名仅作低置信提示与二级消歧。
+- `gateway.routing.ROUTE_RULES` 是处理路由的唯一权威：规则顺序就是优先级，Discoverer、Dispatcher 和查询命令读取同一份数据。
+- `workers/*/worker.json` 与 lite worker 注册表声明 worker 能力和运行要求，但不自行决定路由优先级。
+- 本文与 README 是语义说明，不另维护一份可执行链表。
+
+查看当前项目配置的完整总表：
+
+```bash
+adg routes                         # 人类可读：格式 → 条件 → 动作 → 工具 → 原因
+adg routes --kind pdf              # 只看某个类型
+adg routes --format .msg --json    # Agent/程序可消费的过滤结果
+adg check                          # 另查这些 worker 在当前机器是否可用
+```
+
+“支持”分为三层，不能混为一谈：
+
+1. `gateway.magic` 能识别该格式；
+2. 总路由表为它配置了 `parse` 或 `expand` 动作；
+3. 对应 worker 在当前机器可用。
+
+`adg routes` 回答前两层，`adg check` 回答第三层。能识别但没有安全处理路径的格式，规则必须标为 `unresolved`，不能假装支持。
+
 ## PDF 特征路由（范例）
 
 ```text
 PDF 预检（加密检测、文字层采样、版面复杂度、扫描比例）
 ├── 加密                    → qpdf worker（需密码）→ 否则 unresolved(encrypted)
-├── 有可靠文字层、版面简单  → [docling, pypdf, pdflite]
-├── 混合型                  → [mineru, docling, pypdf, pdflite]
-└── 扫描或复杂版面          → [mineru] → 无可用 worker 时 unresolved，不假装成功
+├── 结构不完整              → [pypdf, pdf_lite]
+├── 扫描/无文字层           → [mineru]
+├── 混合或复杂版面          → [mineru, docling, pdfplumber, pypdf, pdf_lite]
+└── 数字简单                → [docling, pdfplumber, pypdf, pdf_lite]
 ```
 
 预检启发式（pdflite）：采样内容流解压，统计每页文字字节与图像 XObject 比例。启发式结论写 `low_confidence` 提示，路由决定记录进 lineage 与 quality.notes。
 
-## 各簇默认链
+## 总表字段与动作
 
-| 簇 | 链（按优先级） |
-|----|----------------|
-| docx | docx_lite（批注/修订多轨）→ officecli → docling |
-| xlsx | xlsx_lite → docling |
-| csv / txt / md | csv_lite / text_lite |
-| html | trafilatura → html_lite |
-| image | paddleocr → image_lite（仅元数据） |
-| eml | eml_lite |
-| msg | extract_msg |
-| pst/ost | libpff（transform→eml 回灌） |
-| chat 导出 | chat_lite；截图走 image 簇 |
-| 音视频 | whisper（+ffmpeg）→ av_lite（仅元数据，text_extraction=fail） |
-| dxf | ezdxf → dxf_lite |
-| dwg | libredwg（transform→dxf 回灌） |
-| rar/7z | py7zr worker → 否则 unresolved |
+每条规则至少包含稳定 `rule_id`、`kind`、格式/特征条件、动作、工具链和选择原因。规则按声明顺序首条命中，因此更具体的格式/特征规则必须排在默认规则之前。
+
+- `parse`：把 `workers` 作为实际 Dispatcher 降级链。
+- `expand`：容器在发现阶段用 `tools` 安全展开，成员重新走格式识别和总路由。
+- `unresolved`：已识别但没有获准的安全处理路径，显式记录能力缺口。
+
+扩展名列表由 `gateway.magic.extension_catalog()` 投影到总表，不在路由模块重复维护。内容魔数优先于扩展名，所以改名文件仍按真实类型路由。
 
 ## 降级纪律
 

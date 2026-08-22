@@ -11,7 +11,8 @@ import sys
 from pathlib import Path
 
 from . import __version__
-from .commands import check, doctor, list_, parse, report, scan, setup, status, verify
+from .commands import check, doctor, list_, parse, report, routes, scan, setup, status, verify
+from .errors import ADGError
 
 EXIT_CODE = {"pass": 0, "pass_with_warnings": 1, "fail": 2}
 
@@ -32,6 +33,7 @@ def build_parser() -> argparse.ArgumentParser:
     report.build(sub)
     status.build(sub)
     list_.build(sub)
+    routes.build(sub)
     verify.build(sub)
     return p
 
@@ -48,6 +50,9 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("adg: 已中断", file=sys.stderr)
         return 130
+    except ADGError as e:
+        print(f"adg: {e}", file=sys.stderr)
+        return 2
     except Exception as e:
         print(f"adg: 未处理错误: {type(e).__name__}: {e}", file=sys.stderr)
         return 2

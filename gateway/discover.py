@@ -16,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Iterable
 
-from . import magic
+from . import magic, routing
 from . import manifest as manifest_mod
 from .errors import SecurityViolation
 from .hashing import source_id_of_bytes, source_id_of_file
@@ -186,6 +186,19 @@ class Discoverer:
             "rejected_members": [],
         }
         self.result.expanded_archives.append(record)
+        route = routing.resolve_rule(magic.ARCHIVE, fmt, {})
+        if route is None or route.action != "expand":
+            reason = route.reason if route is not None else f"未知压缩格式 {fmt!r}"
+            tools = "、".join(route.processing_tools) if route is not None else ""
+            suggested_action = f"接入并验证安全展开器：{tools}" if tools else None
+            self._unresolved_rel(
+                rel,
+                ff.source_id,
+                reason,
+                stage="expand",
+                suggested_action=suggested_action,
+            )
+            return
         try:
             if fmt == "zip":
                 self._expand_zip(ff, record, depth=depth)
@@ -195,10 +208,10 @@ class Discoverer:
                 self._expand_targz(ff, record, depth=depth)
             elif fmt == "gzip":
                 self._expand_gzip(ff, record, depth=depth)
-            elif fmt in ("rar", "7z"):
+            elif fmt == "7z":
                 self._expand_external(ff, record, depth=depth, fmt=fmt)
             else:
-                self._unresolved_rel(rel, ff.source_id, f"未知压缩格式 {fmt!r}", stage="expand")
+                self._unresolved_rel(rel, ff.source_id, f"路由已允许但没有展开实现: {fmt!r}", stage="expand")
         except (SecurityViolation, zipfile.BadZipFile, tarfile.TarError, OSError, EOFError, gzip.BadGzipFile) as e:
             self.result.corrupted.append(rel)
             self._unresolved_rel(rel, ff.source_id, f"压缩包损坏或不可读: {type(e).__name__}: {e}", stage="expand")

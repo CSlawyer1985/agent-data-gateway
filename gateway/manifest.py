@@ -13,9 +13,14 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
+import threading
 from pathlib import Path
 
+from .errors import ConcurrentWriteError, DataIntegrityError
+from .hashing import package_id_of, payload_hash_of, rendition_id_of
 from .models import PackageManifest
+from .schema import validate_model
 
 MANIFEST_JSON = "manifest.json"
 MANIFEST_MD = "manifest.md"
@@ -23,6 +28,69 @@ MANIFEST_MD = "manifest.md"
 # 程序内部工作目录（隐藏）：documents 哈希寻址、expanded 展开、work worker 临时、logs 运行日志
 # 用户可见的产物（镜像视图 .md/.json + 可看二进制）一律放输出目录顶层，按原件结构布局。
 INTERNAL_DIR = ".adg"
+_LOCAL_LOCK_GUARD = threading.Lock()
+_LOCAL_LOCKED_OUTPUTS: set[Path] = set()
+
+
+class OutputWriteLock:
+    """同一输出目录的非阻塞单写者锁（进程内 + 跨进程）。"""
+
+    def __init__(self, out_dir: Path):
+        self.out_dir = out_dir.resolve()
+        self.path = internal_dir(self.out_dir, "write.lock")
+        self._fp = None
+
+    def __enter__(self) -> "OutputWriteLock":
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        with _LOCAL_LOCK_GUARD:
+            if self.out_dir in _LOCAL_LOCKED_OUTPUTS:
+                raise ConcurrentWriteError(f"输出目录已有写入任务: {self.out_dir}")
+            _LOCAL_LOCKED_OUTPUTS.add(self.out_dir)
+        try:
+            self._fp = open(self.path, "a+b")
+            if os.name == "nt":
+                import msvcrt
+
+                self._fp.seek(0)
+                if self._fp.read(1) == b"":
+                    self._fp.write(b"0")
+                    self._fp.flush()
+                self._fp.seek(0)
+                msvcrt.locking(self._fp.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                import fcntl
+
+                fcntl.flock(self._fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self._fp.seek(0)
+            self._fp.truncate()
+            self._fp.write(f"pid={os.getpid()}\n".encode("ascii"))
+            self._fp.flush()
+            return self
+        except (OSError, BlockingIOError) as e:
+            if self._fp is not None:
+                self._fp.close()
+                self._fp = None
+            with _LOCAL_LOCK_GUARD:
+                _LOCAL_LOCKED_OUTPUTS.discard(self.out_dir)
+            raise ConcurrentWriteError(f"输出目录已有写入任务: {self.out_dir}") from e
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        try:
+            if self._fp is not None:
+                if os.name == "nt":
+                    import msvcrt
+
+                    self._fp.seek(0)
+                    msvcrt.locking(self._fp.fileno(), msvcrt.LK_UNLCK, 1)
+                else:
+                    import fcntl
+
+                    fcntl.flock(self._fp.fileno(), fcntl.LOCK_UN)
+                self._fp.close()
+                self._fp = None
+        finally:
+            with _LOCAL_LOCK_GUARD:
+                _LOCAL_LOCKED_OUTPUTS.discard(self.out_dir)
 
 
 def internal_dir(out_dir: Path, *parts: str) -> Path:
@@ -48,9 +116,25 @@ def is_adg_output_name(name: str) -> bool:
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
-    os.replace(tmp, path)
+    fd, tmp_name = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
+    tmp = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+        if os.name != "nt":
+            dir_fd = os.open(path.parent, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+    finally:
+        try:
+            tmp.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def atomic_write_json(path: Path, obj: dict) -> None:
@@ -59,7 +143,17 @@ def atomic_write_json(path: Path, obj: dict) -> None:
 
 def save_manifest(m: PackageManifest, out_dir: Path) -> Path:
     path = out_dir / MANIFEST_JSON
-    atomic_write_json(path, m.to_dict())
+    expected = m._loaded_payload_sha256
+    if expected is not None and path.exists():
+        current = _read_json(path)
+        _verify_payload_hash(current, path)
+        current_hash = current.get("integrity", {}).get("payload_sha256")
+        if current_hash != expected:
+            raise ConcurrentWriteError("manifest 在本次运行期间已被其他写入者修改")
+    doc = m.to_dict()
+    _validate_manifest_doc(doc, path)
+    atomic_write_json(path, doc)
+    m._loaded_payload_sha256 = doc["integrity"]["payload_sha256"]
     return path
 
 
@@ -67,8 +161,47 @@ def load_manifest(out_dir: Path) -> PackageManifest | None:
     path = out_dir / MANIFEST_JSON
     if not path.exists():
         return None
-    with open(path, encoding="utf-8") as f:
-        return PackageManifest.from_dict(json.load(f))
+    doc = _read_json(path)
+    _validate_manifest_doc(doc, path)
+    manifest = PackageManifest.from_dict(doc)
+    manifest._loaded_payload_sha256 = doc["integrity"]["payload_sha256"]
+    _validate_manifest_references(manifest, out_dir)
+    return manifest
+
+
+def _read_json(path: Path) -> dict:
+    try:
+        with open(path, encoding="utf-8") as f:
+            doc = json.load(f)
+    except (json.JSONDecodeError, OSError) as e:
+        raise DataIntegrityError(f"无法读取持久化 JSON {path.name}: {e}") from e
+    if not isinstance(doc, dict):
+        raise DataIntegrityError(f"持久化 JSON 顶层必须是对象: {path.name}")
+    return doc
+
+
+def _verify_payload_hash(doc: dict, path: Path) -> None:
+    stored = (doc.get("integrity") or {}).get("payload_sha256")
+    actual = payload_hash_of(doc)
+    if not isinstance(stored, str) or stored != actual:
+        raise DataIntegrityError(f"payload_sha256 校验失败: {path.name}")
+
+
+def _validate_manifest_doc(doc: dict, path: Path) -> None:
+    validate_model(doc, "package_manifest.v0.1.json")
+    _verify_payload_hash(doc, path)
+    expected_package_id = package_id_of([item["source_id"] for item in doc["items"]])
+    if doc["package_id"] != expected_package_id:
+        raise DataIntegrityError(f"package_id 与 items 不一致: {path.name}")
+
+
+def _validate_manifest_references(manifest: PackageManifest, out_dir: Path) -> None:
+    for item in manifest.items:
+        for rendition_id in item.renditions:
+            if not rendition_json_path(out_dir, item.source_id, rendition_id).is_file():
+                raise DataIntegrityError(
+                    f"manifest 引用的 rendition 不存在: {item.package_relative_path} / {rendition_id}"
+                )
 
 
 def documents_dir(out_dir: Path, source_id: str) -> Path:
@@ -122,8 +255,9 @@ def load_rendition(out_dir: Path, source_id: str, rendition_id: str) -> dict | N
     path = rendition_json_path(out_dir, source_id, rendition_id)
     if not path.exists():
         return None
-    with open(path, encoding="utf-8") as f:
-        return json.load(f)
+    doc = _read_json(path)
+    _validate_rendition_doc(doc, path, expected_source_id=source_id, expected_rendition_id=rendition_id)
+    return doc
 
 
 def list_rendition_docs(out_dir: Path, source_id: str) -> list[dict]:
@@ -133,12 +267,65 @@ def list_rendition_docs(out_dir: Path, source_id: str) -> list[dict]:
         for p in sorted(d.glob("*.json")):
             if p.name.startswith("alignment-"):
                 continue
-            try:
-                with open(p, encoding="utf-8") as f:
-                    docs.append(json.load(f))
-            except (json.JSONDecodeError, OSError):
-                continue
+            doc = _read_json(p)
+            _validate_rendition_doc(doc, p, expected_source_id=source_id)
+            docs.append(doc)
     return docs
+
+
+def _validate_rendition_doc(
+    doc: dict,
+    path: Path,
+    *,
+    expected_source_id: str | None = None,
+    expected_rendition_id: str | None = None,
+) -> None:
+    validate_model(doc, "evidence_document.v0.1.json")
+    _verify_payload_hash(doc, path)
+    source_id = doc["source_id"]
+    rendition_id = doc["rendition_id"]
+    if expected_source_id is not None and source_id != expected_source_id:
+        raise DataIntegrityError(f"rendition source_id 与目录不一致: {path.name}")
+    if expected_rendition_id is not None and rendition_id != expected_rendition_id:
+        raise DataIntegrityError(f"rendition_id 与 manifest 引用不一致: {path.name}")
+    if doc["integrity"]["source_sha256"] != source_id.split(":", 1)[1]:
+        raise DataIntegrityError(f"rendition source_sha256 校验失败: {path.name}")
+    actual_rendition_id = rendition_id_of(
+        doc["content"], doc["annotations"], doc["provenance"]["coordinate_system"]
+    )
+    if rendition_id != actual_rendition_id:
+        raise DataIntegrityError(f"rendition_id 内容校验失败: {path.name}")
+
+
+def reconcile_renditions(manifest: PackageManifest, out_dir: Path) -> int:
+    """把崩溃后已完整落盘、但尚未写入 manifest 的 rendition 重新录取。"""
+    adopted = 0
+    quality_rank = {"fail": 0, "pass_with_warnings": 1, "pass": 2}
+    status_by_quality = {"fail": "failed", "pass_with_warnings": "parsed_with_warnings", "pass": "parsed"}
+    for item in manifest.items:
+        docs = list_rendition_docs(out_dir, item.source_id)
+        for doc in docs:
+            rendition_id = doc["rendition_id"]
+            if rendition_id not in item.renditions:
+                item.renditions.append(rendition_id)
+                adopted += 1
+        best = max(
+            (doc.get("quality", {}).get("overall") for doc in docs),
+            key=lambda value: quality_rank.get(value, -1),
+            default=None,
+        )
+        if best is not None:
+            item.best_quality = best
+            if item.status != "unsupported" and item.kind != "archive":
+                item.status = status_by_quality[best]
+                if best in ("pass", "pass_with_warnings"):
+                    item.errors = None
+                    manifest.integrity["unresolved_items"] = [
+                        entry
+                        for entry in manifest.integrity.get("unresolved_items", [])
+                        if entry.get("source_id") != item.source_id or entry.get("stage") not in ("parse", None)
+                    ]
+    return adopted
 
 
 # ---------------- Markdown 渲染 ----------------

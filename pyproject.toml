@@ -33,8 +33,11 @@ test = ["pytest"]
 adg = "gateway.cli:main"
 agent-data-gateway = "gateway.cli:main"
 
-[tool.setuptools]
-packages = ["gateway", "gateway.commands", "packs", "packs.legal", "packs.extended"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["gateway*", "packs*", "workers*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 gateway = ["../models/*.json"]
+"*" = ["worker.json", "README.md", "Dockerfile"]

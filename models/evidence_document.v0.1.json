@@ -105,7 +105,8 @@
             "properties": {
               "name": {"type": "string"},
               "version": {"type": "string"},
-              "reason": {"type": "string", "enum": ["unavailable", "hardware_unmet", "timeout", "error", "rejected_by_preflight", "low_quality"]}
+              "reason": {"type": "string", "enum": ["unavailable", "hardware_unmet", "timeout", "error", "rejected_by_preflight", "low_quality"]},
+              "detail": {"type": "string", "description": "经隐私清洗的降级原因详情"}
             }
           }
         }

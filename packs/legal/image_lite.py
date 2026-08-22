@@ -168,7 +168,12 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
         "operation": "parse",
         "content": {"blocks": blocks},
         "quality_dims": dims,
-        "fitness": {"fact_extraction": False, "quotation": True},
+        "fitness": {
+            "fulltext_search": False,
+            "fact_extraction": False,
+            "quotation": False,
+            "layout_sensitive_analysis": False,
+        },
         "notes": notes,
         "truncated": False,
     }

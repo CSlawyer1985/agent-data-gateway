@@ -382,6 +382,14 @@ def run_matrix(work_root: Path | None = None, *, keep: bool = False) -> MatrixRe
     registry.load_external()
     env = detect_environment()
 
+    bundled_workers = {"docling", "pypdf", "mineru", "py7zr", "whisper"}
+    missing_bundled = sorted(bundled_workers - set(registry.workers))
+    result.add(
+        "发布产物：内置外部 worker 清单可发现",
+        not missing_bundled,
+        "全部可发现" if not missing_bundled else f"缺失={missing_bundled}",
+    )
+
     # ---------- 环境检测 ----------
     env_dict = env.to_dict()
     need_keys = {"python_version", "os", "cpu_count", "gpu", "container"}
@@ -595,13 +603,13 @@ def run_matrix(work_root: Path | None = None, *, keep: bool = False) -> MatrixRe
     bad_adapter.write_text("import sys; sys.exit(3)\n", encoding="utf-8")
     bad_w = WorkerInfo(name="bad", version="0", role="parse", kinds=["text"], formats=None,
                        requirements={}, backend="subprocess", adapter_path=bad_adapter)
-    r1 = run_subprocess_protocol(bad_w, {"type": "parse_request", "job_id": "t1", "source_path": "x", "source_id": "", "kind": "text", "work_dir": str(work_root)},
+    r1 = run_subprocess_protocol(bad_w, {"protocol_version": "0.1", "type": "parse_request", "job_id": "t1", "source_path": "x", "source_id": "", "kind": "text", "work_dir": str(work_root)},
                                  timeout=10, max_output_bytes=1 << 20, env_passthrough=["PATH"])
     slow_adapter = work_root / "slow_worker.py"
     slow_adapter.write_text("import time; time.sleep(30)\n", encoding="utf-8")
     slow_w = WorkerInfo(name="slow", version="0", role="parse", kinds=["text"], formats=None,
                         requirements={}, backend="subprocess", adapter_path=slow_adapter)
-    r2 = run_subprocess_protocol(slow_w, {"type": "parse_request", "job_id": "t2", "source_path": "x", "source_id": "", "kind": "text", "work_dir": str(work_root)},
+    r2 = run_subprocess_protocol(slow_w, {"protocol_version": "0.1", "type": "parse_request", "job_id": "t2", "source_path": "x", "source_id": "", "kind": "text", "work_dir": str(work_root)},
                                  timeout=1, max_output_bytes=1 << 20, env_passthrough=["PATH"])
     result.add(
         "worker 隔离：崩溃与超时可控",

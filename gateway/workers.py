@@ -12,20 +12,21 @@ from __future__ import annotations
 
 import json
 import os
+import queue
 import shutil
 import subprocess
 import sys
 import tempfile
 import threading
-import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any, Callable
 
 from . import PROTOCOL_VERSION
-from .errors import WorkerFailed, WorkerUnavailable
+from .errors import ContractViolation, SecurityViolation, WorkerFailed, WorkerUnavailable
 from .hardware import Environment
-from .security import load_policy
+from .schema import SchemaValidationError, validate_model
+from .security import load_policy, resolve_worker_output
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
@@ -195,8 +196,187 @@ class WorkerRegistry:
 
 
 def _jsonl_send(fp, obj: dict) -> None:
-    fp.write(json.dumps(obj, ensure_ascii=False) + "\n")
+    fp.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
     fp.flush()
+
+
+def _protocol_failure(request: dict, kind: str, message: str) -> dict:
+    return {
+        "type": "parse_result",
+        "job_id": str(request.get("job_id", "")),
+        "status": "failed",
+        "error": {"kind": kind, "message": message},
+    }
+
+
+def _validate_request(request: dict) -> str | None:
+    try:
+        validate_model(request, "worker_protocol.v0.1.json")
+    except (SchemaValidationError, OSError, json.JSONDecodeError) as e:
+        return f"parse_request 不符合 Worker Protocol: {e}"
+    if request.get("type") != "parse_request":
+        return f"期望 parse_request，实际 {request.get('type')!r}"
+    if request.get("protocol_version") != PROTOCOL_VERSION:
+        return f"不支持的协议版本 {request.get('protocol_version')!r}"
+    return None
+
+
+def _validate_worker_message(message: object, request: dict, *, terminal: bool) -> str | None:
+    try:
+        validate_model(message, "worker_protocol.v0.1.json")
+    except (SchemaValidationError, OSError, json.JSONDecodeError) as e:
+        return f"worker 消息不符合 Worker Protocol: {e}"
+    assert isinstance(message, dict)
+    expected_type = "parse_result" if terminal else "progress"
+    if message.get("type") != expected_type:
+        return f"解析期间不接受消息类型 {message.get('type')!r}"
+    if message.get("job_id") != request.get("job_id"):
+        return f"job_id 不匹配: {message.get('job_id')!r} != {request.get('job_id')!r}"
+    return None
+
+
+def _run_jsonl_command(
+    command: list[str],
+    request: dict,
+    *,
+    timeout: int,
+    max_output_bytes: int,
+    env: dict[str, str] | None = None,
+    cwd: Path | None = None,
+) -> dict:
+    """统一驱动 subprocess/docker，流式限制 stdout+stderr 并执行真实超时。"""
+    request_error = _validate_request(request)
+    if request_error:
+        return _protocol_failure(request, "rejected", request_error)
+
+    proc = subprocess.Popen(
+        command,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        env=env,
+        cwd=str(cwd) if cwd is not None else None,
+    )
+    assert proc.stdin and proc.stdout and proc.stderr
+    events: queue.Queue[tuple[str, bytes | None]] = queue.Queue(maxsize=16)
+    stop_readers = threading.Event()
+
+    def _emit(event: tuple[str, bytes | None]) -> bool:
+        while not stop_readers.is_set():
+            try:
+                events.put(event, timeout=0.1)
+                return True
+            except queue.Full:
+                continue
+        return False
+
+    def _reader(name: str, stream) -> None:
+        try:
+            while not stop_readers.is_set():
+                chunk = os.read(stream.fileno(), 64 * 1024)
+                if not chunk:
+                    break
+                if not _emit((name, chunk)):
+                    break
+        finally:
+            _emit((name, None))
+
+    readers = [
+        threading.Thread(target=_reader, args=("stdout", proc.stdout), daemon=True),
+        threading.Thread(target=_reader, args=("stderr", proc.stderr), daemon=True),
+    ]
+    for reader in readers:
+        reader.start()
+
+    result: dict | None = None
+    failure: dict | None = None
+    stdout_buffer = bytearray()
+    stderr_tail = bytearray()
+    produced = 0
+    eof: set[str] = set()
+    import time
+
+    deadline = time.monotonic() + timeout
+    try:
+        try:
+            _jsonl_send(proc.stdin, request)
+            proc.stdin.close()
+        except OSError as e:
+            failure = _protocol_failure(request, "crash", f"worker 在接收请求前退出: {e}")
+        while failure is None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                failure = _protocol_failure(request, "timeout", "worker 未在时限内返回终态")
+                break
+            try:
+                channel, chunk = events.get(timeout=min(0.1, remaining))
+            except queue.Empty:
+                if proc.poll() is not None and eof == {"stdout", "stderr"}:
+                    break
+                continue
+            if chunk is None:
+                eof.add(channel)
+                if channel == "stdout" and stdout_buffer:
+                    failure = _protocol_failure(request, "rejected", "worker stdout 末行不是完整 JSONL（缺少换行）")
+                    break
+                if proc.poll() is not None and eof == {"stdout", "stderr"}:
+                    break
+                continue
+
+            produced += len(chunk)
+            if produced > max_output_bytes:
+                failure = _protocol_failure(request, "resource_limit", "worker stdout/stderr 合计输出超限")
+                break
+            if channel == "stderr":
+                stderr_tail.extend(chunk)
+                if len(stderr_tail) > 2000:
+                    del stderr_tail[:-2000]
+                continue
+
+            stdout_buffer.extend(chunk)
+            while b"\n" in stdout_buffer:
+                raw_line, _, rest = stdout_buffer.partition(b"\n")
+                stdout_buffer = bytearray(rest)
+                if not raw_line.strip():
+                    continue
+                try:
+                    message = json.loads(raw_line.decode("utf-8"))
+                except (UnicodeDecodeError, json.JSONDecodeError) as e:
+                    failure = _protocol_failure(request, "rejected", f"worker stdout 不是合法 JSONL: {e}")
+                    break
+                terminal = isinstance(message, dict) and message.get("type") == "parse_result"
+                message_error = _validate_worker_message(message, request, terminal=terminal)
+                if message_error:
+                    failure = _protocol_failure(request, "rejected", message_error)
+                    break
+                if terminal:
+                    result = message
+                    break
+            if failure is not None or result is not None:
+                break
+    finally:
+        stop_readers.set()
+        if proc.poll() is None:
+            proc.kill()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.terminate()
+            proc.wait(timeout=10)
+        for stream in (proc.stdin, proc.stdout, proc.stderr):
+            try:
+                stream.close()
+            except OSError:
+                pass
+        for reader in readers:
+            reader.join(timeout=1)
+
+    if failure is not None:
+        return failure
+    if result is not None:
+        return result
+    tail = stderr_tail.decode("utf-8", errors="replace")[-500:]
+    return _protocol_failure(request, "crash", f"worker 未返回终态（crash）。stderr: {tail}")
 
 
 def run_subprocess_protocol(
@@ -211,80 +391,22 @@ def run_subprocess_protocol(
     py = str(w.venv_python) if (w.venv_python and w.venv_python.exists()) else sys.executable
     env = {k: os.environ[k] for k in env_passthrough if k in os.environ}
     env["ADG_PROTOCOL_VERSION"] = PROTOCOL_VERSION
-    proc = subprocess.Popen(
+    assert w.adapter_path is not None
+    return _run_jsonl_command(
         [py, str(w.adapter_path)],
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
+        request,
+        timeout=timeout,
+        max_output_bytes=max_output_bytes,
         env=env,
-        cwd=str(w.adapter_path.parent),
+        cwd=w.adapter_path.parent,
     )
-    assert proc.stdin and proc.stdout
-
-    state = {"timed_out": False}
-
-    def _watchdog():
-        state["timed_out"] = True
-        if proc.poll() is None:
-            proc.kill()
-
-    timer = threading.Timer(timeout, _watchdog)
-
-    result: dict | None = None
-    produced = 0
-    try:
-        timer.start()
-        _jsonl_send(proc.stdin, request)
-        while True:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            produced += len(line.encode("utf-8"))
-            if produced > max_output_bytes:
-                result = {"type": "parse_result", "status": "failed", "error": {"kind": "resource_limit", "message": "worker 输出超限"}}
-                break
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if msg.get("type") == "parse_result":
-                result = msg
-                break
-    finally:
-        timer.cancel()
-        if proc.poll() is None:
-            proc.kill()
-        try:
-            proc.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            proc.terminate()
-        stderr_tail = ""
-        if proc.stderr:
-            try:
-                stderr_tail = proc.stderr.read()[-2000:]
-            except OSError:
-                pass
-        for pipe in (proc.stdin, proc.stdout, proc.stderr):
-            if pipe is not None:
-                try:
-                    pipe.close()
-                except OSError:
-                    pass
-    if result is None:
-        kind = "timeout" if state["timed_out"] else "crash"
-        return {
-            "type": "parse_result",
-            "status": "failed",
-            "error": {"kind": kind, "message": f"worker 未返回终态（{kind}）。stderr: {stderr_tail[-500:]}"},
-        }
-    return result
 
 
 def run_docker_protocol(w: WorkerInfo, request: dict, *, source_path: Path, work_dir: Path, policy: dict) -> dict:
     """docker 后端：只读挂载原件、network=none、资源限额、tmpfs work_dir。"""
     sb = policy["worker_sandbox"]["docker"]
     timeout = policy["worker_sandbox"]["subprocess"]["timeout_seconds"]
+    max_output_bytes = policy["worker_sandbox"]["subprocess"]["max_output_bytes"]
     image = w.docker_image or ""
     container_work = "/adg-work"
     container_source = "/adg-source/input"
@@ -307,36 +429,99 @@ def run_docker_protocol(w: WorkerInfo, request: dict, *, source_path: Path, work
     if sb.get("tmpfs_work_dir"):
         cmd += ["--tmpfs", "/tmp:rw,noexec,nosuid,size=512m"]
     cmd.append(image)
-    proc = subprocess.Popen(
-        cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
-    )
-    assert proc.stdin and proc.stdout
-    result: dict | None = None
-    try:
-        _jsonl_send(proc.stdin, req)
-        deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            try:
-                msg = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            if msg.get("type") == "parse_result":
-                result = msg
-                break
-    finally:
-        if proc.poll() is None:
-            proc.kill()
-        proc.wait(timeout=10)
-    if result is None:
-        return {"type": "parse_result", "status": "failed", "error": {"kind": "crash", "message": "容器 worker 未返回终态"}}
-    # 路径翻译回主机
+    result = _run_jsonl_command(cmd, req, timeout=timeout, max_output_bytes=max_output_bytes)
+    if result.get("status") != "ok":
+        return result
+    # 容器路径翻译为 work_dir 相对路径；最终宿主机 containment 由统一录取层执行。
+    path_holders: list[dict] = []
     if result.get("fragment_path"):
-        result["fragment_path"] = str(work_dir / Path(result["fragment_path"]).name)
-    for of in result.get("output_files") or []:
-        of["path"] = str(work_dir / Path(of["path"]).name)
+        path_holders.append(result)
+    path_holders.extend(result.get("output_files") or [])
+    fragment = result.get("fragment") or {}
+    path_holders.extend(fragment.get("attachments") or [])
+    path_holders.extend(fragment.get("output_files") or [])
+    for holder in path_holders:
+        key = "fragment_path" if holder is result else "path"
+        holder[key] = _container_relative_path(holder[key], container_work)
+    return result
+
+
+def _container_relative_path(raw_path: str, container_work: str) -> str:
+    path = PurePosixPath(raw_path)
+    work = PurePosixPath(container_work)
+    if path.is_absolute():
+        try:
+            path = path.relative_to(work)
+        except ValueError as e:
+            raise SecurityViolation(f"容器 worker 产物逃逸 {container_work}: {raw_path!r}") from e
+    if not path.parts or any(part in ("..", "") for part in path.parts):
+        raise SecurityViolation(f"容器 worker 产物路径非法: {raw_path!r}")
+    return path.as_posix()
+
+
+def _validate_fragment(fragment: dict) -> None:
+    content = fragment.get("content")
+    if content is not None:
+        if not isinstance(content, dict) or not isinstance(content.get("blocks", []), list):
+            raise ContractViolation("worker fragment.content.blocks 必须是数组")
+        for block in content.get("blocks", []):
+            if not isinstance(block, dict) or not isinstance(block.get("elements", []), list):
+                raise ContractViolation("worker fragment block/elements 结构非法")
+            for element in block.get("elements", []):
+                if not isinstance(element, dict) or not isinstance(element.get("locator"), dict):
+                    raise ContractViolation("worker fragment element 必须包含 locator 对象")
+    for key in ("quality_dims", "fitness", "annotations"):
+        if key in fragment and not isinstance(fragment[key], dict):
+            raise ContractViolation(f"worker fragment.{key} 必须是对象")
+    for key in ("notes", "warnings"):
+        if key in fragment and (
+            not isinstance(fragment[key], list) or not all(isinstance(v, str) for v in fragment[key])
+        ):
+            raise ContractViolation(f"worker fragment.{key} 必须是字符串数组")
+    attachments = fragment.get("attachments") or []
+    if not isinstance(attachments, list):
+        raise ContractViolation("worker fragment.attachments 必须是数组")
+    for attachment in attachments:
+        if not isinstance(attachment, dict) or not isinstance(attachment.get("name"), str) or not isinstance(attachment.get("path"), str):
+            raise ContractViolation("worker attachment 必须包含字符串 name/path")
+
+
+def _admit_worker_result(result: dict, request: dict, work_dir: Path, *, worker_role: str) -> dict:
+    error = _validate_worker_message(result, request, terminal=True)
+    if error:
+        return _protocol_failure(request, "rejected", error)
+    if result.get("status") != "ok":
+        return result
+    try:
+        fragment = result.get("fragment")
+        if result.get("fragment_path"):
+            fragment_path = resolve_worker_output(work_dir, result["fragment_path"])
+            with open(fragment_path, encoding="utf-8") as f:
+                fragment = json.load(f)
+            result["fragment"] = fragment
+            result.pop("fragment_path", None)
+        if fragment is not None:
+            if not isinstance(fragment, dict):
+                raise ContractViolation("worker fragment 必须是对象")
+            _validate_fragment(fragment)
+        if worker_role in ("parse", "enrich") and not isinstance(fragment, dict):
+            raise ContractViolation(f"{worker_role} worker 成功终态必须包含 fragment")
+
+        output_groups = [result.get("output_files") or []]
+        if isinstance(fragment, dict):
+            output_groups.extend([fragment.get("attachments") or [], fragment.get("output_files") or []])
+        if worker_role == "transform" and not output_groups[0]:
+            raise ContractViolation("transform worker 成功终态必须包含 output_files")
+        for group in output_groups:
+            if not isinstance(group, list):
+                raise ContractViolation("worker output_files/attachments 必须是数组")
+            for output in group:
+                if not isinstance(output, dict) or not isinstance(output.get("path"), str):
+                    raise ContractViolation("worker 产物必须包含字符串 path")
+                resolved = resolve_worker_output(work_dir, output["path"])
+                output["path"] = resolved.relative_to(work_dir.resolve()).as_posix()
+    except (ContractViolation, SecurityViolation, OSError, json.JSONDecodeError) as e:
+        return _protocol_failure(request, "rejected", f"worker 产物未通过录取: {e}")
     return result
 
 
@@ -350,6 +535,9 @@ def execute_worker(
 ) -> dict:
     """统一执行入口。返回协议 parse_result（含 fragment 或 fragment_path）。"""
     policy = policy or load_policy()
+    request_error = _validate_request(request)
+    if request_error:
+        return _protocol_failure(request, "rejected", request_error)
     if w.backend == "inproc":
         assert w.parse_fn is not None
         limits = policy.get("parser_limits", {})
@@ -362,26 +550,28 @@ def execute_worker(
                 limits=limits,
                 work_dir=work_dir,
             )
-            return {"type": "parse_result", "status": "ok", "fragment": fragment}
+            result = {"type": "parse_result", "job_id": request["job_id"], "status": "ok", "fragment": fragment}
         except WorkerUnavailable:
             raise
         except WorkerFailed as e:
-            return {"type": "parse_result", "status": "failed", "error": {"kind": e.kind, "message": str(e)}}
+            result = _protocol_failure(request, e.kind, str(e))
         except Exception as e:  # lite parser 异常不得击穿编排器
-            return {"type": "parse_result", "status": "failed", "error": {"kind": "crash", "message": f"{type(e).__name__}: {e}"}}
-    timeout = policy["worker_sandbox"]["subprocess"]["timeout_seconds"]
-    max_out = policy["worker_sandbox"]["subprocess"]["max_output_bytes"]
-    env_pass = policy["worker_sandbox"]["subprocess"]["env_passthrough"]
-    if w.backend == "docker":
-        ok, reason = shutil.which("docker") is not None, "docker 不在 PATH"
-        if not ok:
-            raise WorkerUnavailable(reason)
-        return run_docker_protocol(w, request, source_path=source_path, work_dir=work_dir, policy=policy)
-    if w.backend == "subprocess":
-        if not w.adapter_path or not w.adapter_path.exists():
-            raise WorkerUnavailable("adapter 缺失")
-        return run_subprocess_protocol(w, request, timeout=timeout, max_output_bytes=max_out, env_passthrough=env_pass)
-    raise WorkerUnavailable(f"未知后端 {w.backend}")
+            result = _protocol_failure(request, "crash", f"{type(e).__name__}: {e}")
+    else:
+        timeout = policy["worker_sandbox"]["subprocess"]["timeout_seconds"]
+        max_out = policy["worker_sandbox"]["subprocess"]["max_output_bytes"]
+        env_pass = policy["worker_sandbox"]["subprocess"]["env_passthrough"]
+        if w.backend == "docker":
+            if shutil.which("docker") is None:
+                raise WorkerUnavailable("docker 不在 PATH")
+            result = run_docker_protocol(w, request, source_path=source_path, work_dir=work_dir, policy=policy)
+        elif w.backend == "subprocess":
+            if not w.adapter_path or not w.adapter_path.exists():
+                raise WorkerUnavailable("adapter 缺失")
+            result = run_subprocess_protocol(w, request, timeout=timeout, max_output_bytes=max_out, env_passthrough=env_pass)
+        else:
+            raise WorkerUnavailable(f"未知后端 {w.backend}")
+    return _admit_worker_result(result, request, work_dir, worker_role=w.role)
 
 
 def make_work_dir(base: Path, job_id: str) -> Path:

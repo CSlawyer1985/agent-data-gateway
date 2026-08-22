@@ -6,53 +6,110 @@ preflight 钩子由 packs.legal 注册（插件自注册，gateway 不反向依�
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable
+
+from .magic import extension_catalog
 
 # preflight: (source_path, detected) -> features dict
 PreflightFn = Callable[[Path, Any], dict]
 
 _PREFLIGHTS: dict[str, PreflightFn] = {}
 
-# 格式簇默认链：元素为 worker 名（lite 或外部）。
-DEFAULT_CHAINS: dict[str, list[str]] = {
-    "docx": ["docx_lite", "officecli", "docling"],
-    "doc": ["doc_lite", "docling"],  # textutil lite 优先，老格式降级 docling
-    "xlsx": ["xlsx_lite", "docling"],
-    "xls": ["xls", "docling"],
-    "csv": ["csv_lite"],
-    "text": ["text_lite"],
-    "html": ["trafilatura", "html_lite"],
-    "image": ["paddleocr", "rapidocr", "image_lite"],
-    "email": ["eml_lite"],  # msg/pst/ost 由 format 细分覆盖
-    "chat": ["chat_lite"],
-    "audio": ["whisper", "av_lite"],
-    "video": ["video_frames", "whisper", "av_lite"],
-    "dxf": ["ezdxf", "dxf_lite"],
-    "dwg": ["libredwg", "dwg_render"],  # 转 dxf(结构) + 渲染 bmp(可视化+OCR 标注)
-    "pdf": ["docling", "pdfplumber", "pypdf", "pdf_lite"],  # 默认（数字简单）；预检可改写
-    "presentation": ["pptx_lite", "ppt_old", "docling"],
-    "database": [],
-    "archive": [],
-    "executable": [],
-    "unknown": [],
-}
 
-# email format 细分
-EMAIL_FORMAT_CHAINS: dict[str, list[str]] = {
-    "eml": ["eml_lite"],
-    "msg": ["extract_msg"],
-    "pst": ["libpff"],
-    "ost": ["libpff"],
-}
+@dataclass(frozen=True)
+class RouteRule:
+    """一条可执行、可查询的路由规则；顺序即优先级。"""
 
-# PDF 按预检特征分流
-PDF_CHAINS: dict[str, list[str]] = {
-    "digital_simple": ["docling", "pdfplumber", "pypdf", "pdf_lite"],
-    "scanned": ["mineru"],
-    "mixed_complex": ["mineru", "docling", "pdfplumber", "pypdf", "pdf_lite"],
-    "encrypted": ["qpdf"],
-}
+    rule_id: str
+    kind: str
+    reason: str
+    workers: tuple[str, ...] = ()
+    formats: tuple[str, ...] = ()
+    features: tuple[tuple[str, object], ...] = ()
+    action: str = "parse"  # parse / expand / unresolved
+    tools: tuple[str, ...] = ()  # 非 dispatcher worker，例如 stdlib 展开器
+
+    def matches(self, kind: str, format_: str | None, features: dict) -> bool:
+        if self.kind != kind:
+            return False
+        normalized_format = "eml" if kind == "email" and not format_ else format_
+        if self.formats and normalized_format not in self.formats:
+            return False
+        return all(features.get(key) == value for key, value in self.features)
+
+    @property
+    def processing_tools(self) -> tuple[str, ...]:
+        return self.tools or self.workers
+
+
+# 操作路由的唯一权威。Discoverer、Dispatcher 与 `adg routes` 都读取；列表顺序即命中优先级。
+ROUTE_RULES: tuple[RouteRule, ...] = (
+    RouteRule(
+        "pdf-encrypted",
+        "pdf",
+        "PDF 加密 → qpdf（需密码）",
+        ("qpdf",),
+        features=(("pdf_class", "encrypted"),),
+    ),
+    RouteRule(
+        "pdf-corrupt",
+        "pdf",
+        "PDF 结构不完整（缺 %%EOF）→ 容错链",
+        ("pypdf", "pdf_lite"),
+        features=(("possibly_corrupt", True),),
+    ),
+    RouteRule(
+        "pdf-scanned",
+        "pdf",
+        "PDF 扫描/无文字层 → MinerU",
+        ("mineru",),
+        features=(("pdf_class", "scanned"),),
+    ),
+    RouteRule(
+        "pdf-mixed-complex",
+        "pdf",
+        "PDF 混合/复杂版面 → MinerU 优先",
+        ("mineru", "docling", "pdfplumber", "pypdf", "pdf_lite"),
+        features=(("pdf_class", "mixed_complex"),),
+    ),
+    RouteRule(
+        "pdf-digital-simple",
+        "pdf",
+        "PDF 数字简单 → Docling 优先",
+        ("docling", "pdfplumber", "pypdf", "pdf_lite"),
+    ),
+    RouteRule("email-eml", "email", "RFC 822/MIME 结构可直接解析正文与附件", ("eml_lite",), formats=("eml",)),
+    RouteRule("email-msg", "email", "MSG 是 OLE Outlook 容器，需要专用属性流解析", ("extract_msg",), formats=("msg",)),
+    RouteRule("email-pst", "email", "PST 是 Outlook 邮箱存储，需要 libpff 展开后回灌邮件", ("libpff",), formats=("pst",)),
+    RouteRule("email-ost", "email", "OST 与 PST 同属 Outlook 存储族，使用 libpff 展开", ("libpff",), formats=("ost",)),
+    RouteRule("email-default", "email", "未细分的邮件格式按 EML 兼容路径尝试", ("eml_lite",)),
+    RouteRule("docx-default", "docx", "OOXML Word 可保留段落结构，内置解析优先，Office/Docling 作为增强回退", ("docx_lite", "officecli", "docling")),
+    RouteRule("doc-default", "doc", "旧 Word/ODT 先走本机轻量提取，失败再交给 Docling", ("doc_lite", "docling")),
+    RouteRule("xlsx-default", "xlsx", "OOXML 表格可直接保留工作表与单元格锚点，Docling 作为回退", ("xlsx_lite", "docling")),
+    RouteRule("xls-default", "xls", "旧版二进制工作簿需要专用 xls 解析，Docling 作为回退", ("xls", "docling")),
+    RouteRule("csv-default", "csv", "分隔文本可确定性解析并保留行列结构", ("csv_lite",)),
+    RouteRule("text-default", "text", "纯文本、Markdown、JSON、XML 可直接解码为可检索文本", ("text_lite",)),
+    RouteRule("html-default", "html", "先提取网页正文，失败时由内置 HTML 解析器兜底", ("trafilatura", "html_lite")),
+    RouteRule("image-default", "image", "图片需要 OCR 才能获得正文；无 OCR 时只保留诚实的元数据兜底", ("paddleocr", "rapidocr", "image_lite")),
+    RouteRule("chat-default", "chat", "聊天导出先按消息边界、参与者和时间结构解析", ("chat_lite",)),
+    RouteRule("audio-default", "audio", "音频先用 Whisper 生成带时间码的转录，失败时仅保留媒体元数据", ("whisper", "av_lite")),
+    RouteRule("video-default", "video", "视频先抽帧并尝试语音转录，最后仅保留媒体元数据", ("video_frames", "whisper", "av_lite")),
+    RouteRule("dxf-default", "dxf", "DXF 是结构化 CAD 文本，优先完整解析，内置解析器兜底", ("ezdxf", "dxf_lite")),
+    RouteRule("dwg-default", "dwg", "DWG 需先转为 DXF 获取结构，或渲染位图保留可视证据", ("libredwg", "dwg_render")),
+    RouteRule("presentation-default", "presentation", "演示文稿优先保留幻灯片文本与页级锚点，旧格式转换和 Docling 依次回退", ("pptx_lite", "ppt_old", "docling")),
+    RouteRule("archive-zip", "archive", "ZIP 由发现阶段安全审查并展开，成员重新识别和路由", formats=("zip",), action="expand", tools=("stdlib:zipfile",)),
+    RouteRule("archive-tar", "archive", "TAR 由发现阶段安全审查并展开，成员重新识别和路由", formats=("tar",), action="expand", tools=("stdlib:tarfile",)),
+    RouteRule("archive-targz", "archive", "tar+gzip 逐层展开，成员重新识别和路由", formats=("tar+gzip",), action="expand", tools=("stdlib:gzip", "stdlib:tarfile")),
+    RouteRule("archive-gzip", "archive", "gzip 解压为单个成员后重新识别和路由", formats=("gzip",), action="expand", tools=("stdlib:gzip",)),
+    RouteRule("archive-7z", "archive", "7z 需要隔离的 py7zr worker 展开，成员再走总路由", formats=("7z",), action="expand", tools=("py7zr",)),
+    RouteRule("archive-rar", "archive", "RAR 已可识别，但默认尚未接入安全 expander", formats=("rar",), action="unresolved", tools=("unrar（待接入）",)),
+    RouteRule("archive-unknown", "archive", "未知压缩格式无法选择安全展开器，显式保留 unresolved", action="unresolved"),
+    RouteRule("database-default", "database", "数据库/Revit 目前只识别类型，默认不读取业务内容", action="unresolved"),
+    RouteRule("executable-default", "executable", "可执行文件不作为 Agent 证据内容执行或解析", action="unresolved"),
+    RouteRule("unknown-default", "unknown", "类型识别不足时不猜测 parser，显式保留 unresolved", action="unresolved"),
+)
 
 
 def register_preflight(kind: str, fn: PreflightFn) -> None:
@@ -69,25 +126,77 @@ def preflight(kind: str, source_path: Path, detected: Any) -> dict:
         return {"preflight_error": f"{type(e).__name__}: {e}"}
 
 
+def resolve_rule(kind: str, format_: str | None, features: dict) -> RouteRule | None:
+    """按声明顺序返回首条命中规则。"""
+    return next((rule for rule in ROUTE_RULES if rule.matches(kind, format_, features)), None)
+
+
 def resolve_chain(kind: str, format_: str | None, features: dict) -> tuple[list[str], str]:
     """返回 (候选 worker 链, 路由理由)。"""
-    if kind == "pdf":
-        cls = features.get("pdf_class")
-        if cls == "encrypted":
-            return list(PDF_CHAINS["encrypted"]), "PDF 加密 → qpdf（需密码）"
-        if features.get("possibly_corrupt"):
-            return ["pypdf", "pdf_lite"], "PDF 结构不完整（缺 %%EOF）→ 容错链"
-        if cls == "scanned":
-            return list(PDF_CHAINS["scanned"]), "PDF 扫描/无文字层 → MinerU"
-        if cls == "mixed_complex":
-            return list(PDF_CHAINS["mixed_complex"]), "PDF 混合/复杂版面 → MinerU 优先"
-        return list(PDF_CHAINS["digital_simple"]), "PDF 数字简单 → Docling 优先"
-    if kind == "email":
-        chain = EMAIL_FORMAT_CHAINS.get(format_ or "eml")
-        if chain:
-            return list(chain), f"邮件格式 {format_ or 'eml'} 专用链"
-    chain = DEFAULT_CHAINS.get(kind, [])
-    return list(chain), f"{kind} 默认链"
+    rule = resolve_rule(kind, format_, features)
+    if rule is None:
+        return [], f"{kind} 默认链"
+    return list(rule.workers), rule.reason
+
+
+def _extensions_for_rule(rule: RouteRule, hints: list[dict[str, str | None]]) -> list[str]:
+    claimed_formats = {
+        format_name
+        for candidate in ROUTE_RULES
+        if candidate.kind == rule.kind and candidate.formats
+        for format_name in candidate.formats
+    }
+    matched = []
+    for hint in hints:
+        if hint["kind"] != rule.kind:
+            continue
+        if rule.formats and hint["format"] not in rule.formats:
+            continue
+        if not rule.formats and claimed_formats and hint["format"] in claimed_formats:
+            continue
+        matched.append(str(hint["extension"]))
+    return matched
+
+
+def route_catalog(*, kind: str | None = None, format_: str | None = None) -> list[dict]:
+    """返回总路由表投影；识别扩展名来自 magic，执行规则来自 ROUTE_RULES。"""
+    hints = extension_catalog()
+    rows = []
+    for priority, rule in enumerate(ROUTE_RULES, start=1):
+        if kind and rule.kind != kind:
+            continue
+        extensions = _extensions_for_rule(rule, hints)
+        if format_:
+            wanted = format_.lower()
+            if wanted.startswith("."):
+                if wanted not in extensions:
+                    continue
+            elif rule.formats:
+                if wanted not in rule.formats:
+                    continue
+            elif wanted != rule.kind:
+                continue
+        feature_match = {key: value for key, value in rule.features}
+        rows.append(
+            {
+                "priority": priority,
+                "rule_id": rule.rule_id,
+                "kind": rule.kind,
+                "extensions": extensions,
+                "formats": list(rule.formats),
+                "when": {
+                    "format_in": list(rule.formats),
+                    "features": feature_match,
+                    "otherwise": not rule.formats and not rule.features,
+                },
+                "action": rule.action,
+                "processable": rule.action in {"parse", "expand"},
+                "workers": list(rule.workers),
+                "tools": list(rule.processing_tools),
+                "reason": rule.reason,
+            }
+        )
+    return rows
 
 
 def fallback_reason_from_result(result: dict, *, available: bool, availability_reason: str = "") -> dict:

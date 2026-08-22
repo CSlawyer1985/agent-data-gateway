@@ -9,6 +9,7 @@
 | PDF | `page_bbox` | page（0 起）、bbox [l,t,r,b]，0-1000 归一化，左上原点 |
 | 图像 | `page_bbox` | page=0、bbox 归一化坐标 |
 | docx / 文本 / HTML | `paragraph` | index（文档顺序段落序号） |
+| pptx | `paragraph` | index（全局段落序号），元素 `attrs.slide` 保存幻灯片页码 |
 | xlsx | `cell` | sheet、cell（A1 表示） |
 | csv | `row` | index（0 起，不含表头） |
 | 聊天 | `message` | id（序号或导出自带 ID）、timestamp |

@@ -24,6 +24,8 @@
 
 一次 `adg parse` 调用一个 run_id（`uuid:` 前缀 + UUID4）。写入该次产生的所有 EvidenceDocument 与谱系。重跑产生新 run_id，但不改变 source_id；同配置重跑也不改变 rendition_id。
 
+普通重跑命中同一 rendition_id 时复用已验证产物。显式 `--force` 允许 Gateway 刷新该 rendition 的非身份字段（最新 run_id、质量、parser 记录等），同时追加既有 lineage；`content`、`annotations`、`provenance.coordinate_system` 仍必须重算为同一 rendition_id，不能借此改写内容身份。
+
 ## 三层稳定性
 
 | 层 | 要求 | 说明 |

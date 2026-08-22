@@ -51,7 +51,7 @@ class DetectedType:
 
 
 # 扩展名提示（仅作低置信兜底与二级消歧）
-_EXT_HINTS: dict[str, tuple[str, str, str]] = {
+_EXT_HINTS: dict[str, tuple[str, str, str | None]] = {
     # ext: (kind, mime, format)
     ".pdf": (PDF, "application/pdf", None),
     ".docx": (DOCX, "application/vnd.openxmlformats-officedocument.wordprocessingml.document", None),
@@ -80,6 +80,7 @@ _EXT_HINTS: dict[str, tuple[str, str, str]] = {
     ".tif": (IMAGE, "image/tiff", None),
     ".webp": (IMAGE, "image/webp", None),
     ".heic": (IMAGE, "image/heic", None),
+    ".psd": (IMAGE, "image/vnd.adobe.photoshop", "psd"),
     ".zip": (ARCHIVE, "application/zip", "zip"),
     ".rar": (ARCHIVE, "application/vnd.rar", "rar"),
     ".7z": (ARCHIVE, "application/x-7z-compressed", "7z"),
@@ -105,6 +106,15 @@ _EXT_HINTS: dict[str, tuple[str, str, str]] = {
     ".json": (TEXT, "application/json", "json"),
     ".xml": (TEXT, "application/xml", "xml"),
 }
+
+
+def extension_catalog() -> list[dict[str, str | None]]:
+    """返回扩展名识别提示的只读投影；不代表对应解析 worker 当前可用。"""
+    return [
+        {"extension": ext, "kind": kind, "mime": mime, "format": format_}
+        for ext, (kind, mime, format_) in sorted(_EXT_HINTS.items())
+    ]
+
 
 _OLE2 = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1"
 _FTYP_BRANDS = {

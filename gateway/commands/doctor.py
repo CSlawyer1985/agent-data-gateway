@@ -11,7 +11,7 @@ from .. import inventory
 from ..discover import discover_package
 from ..gap import analyze_manifest_gaps, render_doctor_md
 from ..hardware import detect_environment
-from ..manifest import MANIFEST_MD, atomic_write_text, load_manifest, render_manifest_md, save_manifest
+from ..manifest import MANIFEST_MD, OutputWriteLock, atomic_write_text, load_manifest, render_manifest_md, save_manifest
 from ..models import now_iso
 from ..privacy import RunLog
 from ..workers import WorkerRegistry
@@ -66,16 +66,20 @@ def run(args) -> int:
 
 
 def _scan_fresh(package_path: Path, out_dir: Path):
-    run_log = RunLog(out_dir, "doctor-" + now_iso().replace(":", ""), enabled=True)
-    from packs.legal import chat_kind_refiner
+    with OutputWriteLock(out_dir):
+        existing = load_manifest(out_dir)
+        if existing is not None:
+            return existing
+        run_log = RunLog(out_dir, "doctor-" + now_iso().replace(":", ""), enabled=True)
+        from packs.legal import chat_kind_refiner
 
-    result = discover_package(package_path, out_dir, run_log=run_log, kind_refiners=[chat_kind_refiner()])
-    manifest = inventory.build_manifest(result)
-    inventory.recompute_package_quality(manifest, reliably_read_ids=set())
-    save_manifest(manifest, out_dir)
-    atomic_write_text(out_dir / MANIFEST_MD, render_manifest_md(manifest))
-    run_log.close()
-    return manifest
+        result = discover_package(package_path, out_dir, run_log=run_log, kind_refiners=[chat_kind_refiner()])
+        manifest = inventory.build_manifest(result)
+        inventory.recompute_package_quality(manifest, reliably_read_ids=set())
+        save_manifest(manifest, out_dir)
+        atomic_write_text(out_dir / MANIFEST_MD, render_manifest_md(manifest))
+        run_log.close()
+        return manifest
 
 
 def _report_to_json(report) -> dict:

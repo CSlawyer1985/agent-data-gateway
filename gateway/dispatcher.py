@@ -20,12 +20,12 @@ from typing import Any
 from . import anchor, inventory, magic, manifest as manifest_mod, quality as quality_mod, routing
 from .errors import WorkerUnavailable
 from .hardware import Environment, detect_environment
-from .hashing import sha256_file
+from .hashing import payload_hash_of, sha256_file
 from .lineage import make_entry, now_iso_ms
 from .models import EvidenceDocument, Item, PackageManifest, empty_annotations, new_run_id
 from .privacy import RunLog, scrub_text
 from .render import render_document_md
-from .security import load_policy
+from .security import load_policy, resolve_worker_output
 from .workers import WorkerInfo, WorkerRegistry, execute_worker, make_work_dir
 
 _KIND_DIR = {"archive": "archives", "email": "email", "office-embed": "office-embed", "transform": "transform"}
@@ -98,6 +98,16 @@ class Dispatcher:
     # ---------------- 主流程 ----------------
 
     def run(self) -> ParseSummary:
+        with manifest_mod.OutputWriteLock(self.out_dir):
+            try:
+                return self._run_locked()
+            finally:
+                self.run_log.close()
+
+    def _run_locked(self) -> ParseSummary:
+        adopted = manifest_mod.reconcile_renditions(self.manifest, self.out_dir)
+        if adopted:
+            self.run_log.event(f"recovered {adopted} orphan renditions")
         # 先把历史 rendition 质量全部载入缓存（部分解析时覆盖率不低报）
         for it in self.manifest.items:
             if it.renditions:
@@ -262,7 +272,8 @@ class Dispatcher:
             if fragment is None and result.get("fragment_path"):
                 import json as _json
 
-                with open(result["fragment_path"], encoding="utf-8") as f:
+                fragment_path = resolve_worker_output(work_dir, result["fragment_path"])
+                with open(fragment_path, encoding="utf-8") as f:
                     fragment = _json.load(f)
             if not isinstance(fragment, dict):
                 detail = "worker 返回空片段"
@@ -396,7 +407,7 @@ class Dispatcher:
         if item.mtime:
             source_block["mtime"] = item.mtime
         source_block["origin"] = item.origin
-        source_block["derived_from"] = fragment.get("derived_from")
+        source_block["derived_from"] = item.derived_from
         parser_block = {
             "name": parser_name,
             "version": parser_version,
@@ -439,9 +450,15 @@ class Dispatcher:
 
     def _after_success(self, item: Item, doc: EvidenceDocument, fragment: dict, work_dir: Path, w: WorkerInfo) -> list[Item]:
         doc_dict = doc.to_dict()
-        # L2：同 rendition 已存在则不重写（幂等）
+        # L2：普通重跑复用同一 rendition；显式 --force 可刷新质量/run 等非身份字段。
+        # rendition_id 只覆盖 content/annotations/coordinate_system，因此刷新前先加载并验证旧事实，
+        # 再保留历史 lineage；内容身份仍由 load_rendition 和写后读取校验守住。
         rpath = manifest_mod.rendition_json_path(self.out_dir, item.source_id, doc.rendition_id)
-        if not rpath.exists():
+        existing = manifest_mod.load_rendition(self.out_dir, item.source_id, doc.rendition_id) if rpath.exists() else None
+        if existing is None or self.options.force:
+            if existing is not None:
+                doc_dict["lineage"] = list(existing.get("lineage") or []) + list(doc_dict.get("lineage") or [])
+                doc_dict["integrity"]["payload_sha256"] = payload_hash_of(doc_dict)
             manifest_mod.atomic_write_json(rpath, doc_dict)
             manifest_mod.atomic_write_text(
                 manifest_mod.rendition_md_path(self.out_dir, item.source_id, doc.rendition_id),
@@ -449,6 +466,7 @@ class Dispatcher:
             )
         if doc.rendition_id not in item.renditions:
             item.renditions.append(doc.rendition_id)
+        self._quality_cache.pop(item.source_id, None)
         self._refresh_item_best_quality(item)
         item.errors = None
         self.run_log.event(f"parsed {item.package_relative_path} via {doc.parser['name']} → {doc.rendition_id[:23]}")
@@ -457,9 +475,7 @@ class Dispatcher:
         # 附件回灌（eml 等）：fragment 声明 attachment 文件（相对 work_dir）
         email_added = 0
         for att in fragment.get("attachments") or []:
-            src = work_dir / att["path"]
-            if not src.exists():
-                continue
+            src = resolve_worker_output(work_dir, att["path"])
             members = [{"name": att["name"], "path": src}]
             added = self._ingest_members(
                 container=item,
@@ -473,9 +489,7 @@ class Dispatcher:
             self._record_email_expansion(item, email_added, ok=True)
         # transform 产物回灌（dwg→dxf 等）
         for of in fragment.get("output_files") or []:
-            src = work_dir / of["path"] if not Path(of["path"]).is_absolute() else Path(of["path"])
-            if not src.exists():
-                continue
+            src = resolve_worker_output(work_dir, of["path"])
             members = [{"name": Path(of["path"]).name, "path": src, "derived_from": {"source_id": item.source_id, "tool": w.name, "note": of.get("note")}}]
             added = self._ingest_members(
                 container=item,
@@ -497,9 +511,7 @@ class Dispatcher:
         warnings = result.get("warnings") or []
         for of in out_files:
             raw_path = of.get("path", "")
-            src = Path(raw_path) if Path(raw_path).is_absolute() else work_dir / raw_path
-            if not src.exists():
-                continue
+            src = resolve_worker_output(work_dir, raw_path)
             derived = {"source_id": item.source_id, "tool": w.name, "note": of.get("note")}
             added = self._ingest_members(
                 container=item,

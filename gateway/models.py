@@ -129,6 +129,7 @@ class Item:
         if self.bytes is not None:
             entry["bytes"] = self.bytes
         entry["origin"] = self.origin
+        entry["derived_from"] = self.derived_from
         entry["best_quality"] = self.best_quality
         entry["errors"] = self.errors
         if self.detected_type is not None:
@@ -146,6 +147,7 @@ class Item:
             format=entry.get("format"),
             bytes=entry.get("bytes"),
             origin=entry.get("origin"),
+            derived_from=entry.get("derived_from"),
             renditions=list(entry.get("renditions", [])),
             status=entry.get("status", "discovered"),
             best_quality=entry.get("best_quality"),
@@ -168,6 +170,7 @@ class PackageManifest:
     integrity: dict = field(default_factory=dict)
     quality: dict = field(default_factory=dict)
     package_id: str = ""
+    _loaded_payload_sha256: str | None = field(default=None, repr=False, compare=False)
 
     def compute_package_id(self) -> None:
         self.package_id = package_id_of([it.source_id for it in self.items])
