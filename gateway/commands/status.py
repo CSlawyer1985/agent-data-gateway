@@ -1,6 +1,6 @@
 """adg status — 摄取状态：哪些已读全、哪些未可靠读取。
 
-判定逻辑与 MCP 的 get_ingestion_status 同源（gateway.agent_api），避免两个入口给出不同答案。
+判定逻辑与 adg search 的覆盖提示同源（gateway.agent_api），避免同一问题出现两种答案。
 """
 
 from __future__ import annotations

@@ -171,7 +171,7 @@ def _fmt_tc(seconds: float) -> str:
     return f"{s // 3600:02d}:{(s % 3600) // 60:02d}:{s % 60:02d}"
 
 
-# ---------------- 锚点的人类可读形态（search / anchor / MCP 共用） ----------------
+# ---------------- 锚点的人类可读形态（search / anchor / get 共用） ----------------
 
 
 def format_locator(locator: dict | None) -> str:

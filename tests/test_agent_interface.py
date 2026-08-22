@@ -1,7 +1,6 @@
-"""P5 Agent 接口：检索索引、元素检索、锚点回溯、六个只读操作与 MCP 协议。"""
+"""P5 Agent 接口：检索索引、元素检索、锚点回溯与六个只读查询操作。"""
 
 import atexit
-import io
 import json
 import tempfile
 import unittest
@@ -16,7 +15,6 @@ from gateway.hardware import detect_environment
 from gateway.index import build_index, make_snippet, open_index, parse_terms, search, segment_cjk
 from gateway.inventory import build_manifest, recompute_package_quality
 from gateway.manifest import load_manifest, save_manifest
-from gateway.mcp import TOOLS, MCPServer
 from gateway.privacy import contains_absolute_path
 from gateway.selftest import build_package
 from gateway.workers import WorkerRegistry
@@ -237,100 +235,6 @@ class AgentApiTest(unittest.TestCase):
         for payload in payloads:
             text = json.dumps(payload, ensure_ascii=False)
             self.assertFalse(contains_absolute_path(text), "只读接口返回值泄漏了绝对路径")
-
-
-class MCPProtocolTest(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls):
-        cls.package, cls.out = built_package()
-
-    def setUp(self):
-        self.server = MCPServer(self.package, self.out)
-
-    def tearDown(self):
-        self.server.close()
-
-    def _call(self, method, params=None, msg_id=1):
-        return self.server.handle(
-            {"jsonrpc": "2.0", "id": msg_id, "method": method, "params": params or {}}
-        )
-
-    def test_initialize_echoes_supported_protocol(self):
-        result = self._call("initialize", {"protocolVersion": "2025-06-18"})["result"]
-        self.assertEqual(result["protocolVersion"], "2025-06-18")
-        self.assertIn("tools", result["capabilities"])
-        self.assertEqual(result["serverInfo"]["name"], "agent-data-gateway")
-
-    def test_initialize_falls_back_on_unknown_protocol(self):
-        result = self._call("initialize", {"protocolVersion": "1999-01-01"})["result"]
-        self.assertEqual(result["protocolVersion"], "2024-11-05")
-
-    def test_tools_are_exactly_the_six_read_only_operations(self):
-        names = [t["name"] for t in self._call("tools/list")["result"]["tools"]]
-        self.assertEqual(
-            sorted(names),
-            sorted([
-                "get_ingestion_status",
-                "list_package_items",
-                "search_elements",
-                "get_document",
-                "resolve_anchor",
-                "list_unresolved_items",
-            ]),
-        )
-
-    def test_every_tool_declares_schema_and_description(self):
-        for tool in TOOLS:
-            self.assertTrue(tool["description"])
-            self.assertEqual(tool["inputSchema"]["type"], "object")
-            self.assertIn("properties", tool["inputSchema"])
-
-    def test_notification_gets_no_response(self):
-        self.assertIsNone(self.server.handle({"jsonrpc": "2.0", "method": "notifications/initialized"}))
-
-    def test_unknown_method_and_unknown_tool(self):
-        self.assertEqual(self._call("resources/list")["error"]["code"], -32601)
-        self.assertEqual(
-            self._call("tools/call", {"name": "delete_everything", "arguments": {}})["error"]["code"], -32602
-        )
-
-    def test_tool_call_returns_json_content(self):
-        result = self._call("tools/call", {"name": "get_ingestion_status", "arguments": {}})["result"]
-        self.assertFalse(result["isError"])
-        payload = json.loads(result["content"][0]["text"])
-        self.assertIn("extraction_coverage", payload)
-
-    def test_search_tool_round_trip_to_anchor(self):
-        hits = json.loads(
-            self._call("tools/call", {"name": "search_elements", "arguments": {"query": "签章", "limit": 1}})[
-                "result"
-            ]["content"][0]["text"]
-        )["hits"]
-        self.assertTrue(hits)
-        anchor = json.loads(
-            self._call(
-                "tools/call",
-                {"name": "resolve_anchor", "arguments": {"element_id": hits[0]["element_id"]}},
-            )["result"]["content"][0]["text"]
-        )
-        self.assertEqual(anchor["matches"][0]["package_relative_path"], hits[0]["package_relative_path"])
-
-    def test_bad_arguments_surface_as_tool_error_not_crash(self):
-        result = self._call("tools/call", {"name": "get_document", "arguments": {"ref": "不存在.pdf"}})["result"]
-        self.assertTrue(result["isError"])
-        self.assertIn("不存在.pdf", result["content"][0]["text"])
-
-    def test_serve_loop_handles_malformed_line(self):
-        stdin = io.StringIO(
-            "not json\n"
-            + json.dumps({"jsonrpc": "2.0", "id": 9, "method": "ping"})
-            + "\n"
-        )
-        stdout = io.StringIO()
-        self.server.serve(stdin, stdout)
-        responses = [json.loads(line) for line in stdout.getvalue().splitlines()]
-        self.assertEqual(responses[0]["error"]["code"], -32700)
-        self.assertEqual(responses[1]["id"], 9)
 
 
 if __name__ == "__main__":

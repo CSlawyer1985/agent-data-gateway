@@ -20,18 +20,15 @@
   - **新鲜度指纹**（索引版本 | schema 版本 | adg 版本 | manifest.payload_sha256）未变则复用，变了整库重建；
     构建持输出目录单写者锁、先写临时库再原子替换，消费方一律只读打开。
   - FTS5 不可用时降级 LIKE 扫描，`meta.engine` 与每条结果都标注 `engine=like`——不假装成索引。
-- 新增 `gateway/agent_api.py`：六个只读操作的唯一实现，CLI 与 MCP 共用，杜绝两个入口对同一问题给出不同答案。
-  `adg status` 改为复用它（判定与 `get_ingestion_status` 同源，输出与退出码语义不变）。
+- 新增 `gateway/agent_api.py`：六个只读查询操作的唯一实现，各查询子命令共用，杜绝同一问题出现两种答案。
+  `adg status` 改为复用它（输出与退出码语义不变）。
 - 新增 CLI：`adg index`（构建/更新索引）、`adg search`（元素级检索，命中带锚点与 `quotable`）、
   `adg anchor`（element_id 回溯原件位置 + 前后文）、`adg get`（取解析产物、质量八维、fitness、降级链）。
-- 新增 `gateway/mcp.py` + `adg mcp`：纯 stdlib 的只读 MCP server（JSON-RPC 2.0 over stdio），
-  暴露 `get_ingestion_status` / `list_package_items` / `search_elements` / `get_document` / `resolve_anchor` /
-  `list_unresolved_items` 六个工具，**没有任何写工具**；支持 2025-06-18 / 2025-03-26 / 2024-11-05 三个协议版本，
-  工具级失败回 `isError`、协议级错误回 JSON-RPC error，stdout 只跑协议、诊断走 stderr；
-  manifest 变化时自动重开视图，长驻 server 不会给出过期答案。
-- 诚实语义贯穿两个入口：检索结果携带 `coverage_caveat`（还有几项没读全，"没搜到"不等于"不存在"），
+- 定位明确为**给 Agent 用的命令行工具**：Agent 经 Bash 调子命令、`--json` 拿结构化结果，本轮不做 MCP
+  （曾实现的只读 MCP server 在同一迭代内按需求撤回，代码保留在 git 历史 `3e696bb`，需要时可取回）。
+- 诚实语义贯穿所有查询：检索结果携带 `coverage_caveat`（还有几项没读全，"没搜到"不等于"不存在"），
   每条命中携带 `quotable`（来自 `fitness.quotation`，false = 能检索能作线索、但锚点不足以可靠引用）。
-- `adg parse` 结束后自动建索引（`--no-index` 可关），`search/anchor/mcp` 开箱即用。
+- `adg parse` 结束后自动建索引（`--no-index` 可关），`search/anchor` 开箱即用。
 - 新增规格 `docs/spec/10-agent-interface.md`；`gateway/render.py` 新增 `format_locator()` 统一锚点的人类可读形态。
 
 ### 契约与恢复边界加固
@@ -49,13 +46,13 @@
 
 ### 验证结果
 
-- `python3 -m unittest discover -s tests`：133 项通过（新增 35 项覆盖切分/索引/检索/回溯/六操作/MCP 协议）。
-- 源码 `adg verify`：26/28 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
-  新增 6 条验证项：索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、未读全材料显性提示、
-  element_id 回溯到原件、MCP 六工具可调用且拒绝未知工具。
+- `python3 -m unittest discover -s tests`：123 项通过（新增 24 项覆盖切分/索引/检索/回溯/六个查询操作）。
+- 源码 `adg verify`：25/27 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
+  新增 5 条验证项：索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、未读全材料显性提示、
+  element_id 回溯到原件。
 - 独立 wheel 安装验证：33 个 Worker 全部可发现，`adg setup --worker pypdf --dry-run` 可定位目标；
-  P5 三个模块（index/agent_api/mcp）与五个新子命令随 wheel 发布，`adg mcp --list-tools` 在安装态列出六工具；
-  干净 venv 内 `adg verify` 27/28 通过、0 失败、1 项因 officecli 不可用跳过。
+  P5 两个模块（index/agent_api）与四个新子命令随 wheel 发布；
+  干净 venv 内 `adg verify` 26/27 通过、0 失败，仅 officecli 不可用一项跳过。
 - 真实材料包（23 个物理文件，展开/派生后 35 items）：全部入账；补装 worker 后 31/35 可靠读取（88.57%），
   4 项 unresolved（CAJ 类型未识别、DWG 缺 dwg2dxf、加密 PDF 缺 qpdf、扫描 PDF 缺 MinerU 镜像）全部带原因与补装建议，0 项假成功；
   索引 3100 个元素、FTS5 引擎，中文检索与锚点回溯在真实材料上实测通过。

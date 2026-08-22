@@ -18,7 +18,6 @@ from .commands import (
     get,
     index_,
     list_,
-    mcp,
     parse,
     report,
     routes,
@@ -53,7 +52,6 @@ def build_parser() -> argparse.ArgumentParser:
     search.build(sub)
     anchor.build(sub)
     get.build(sub)
-    mcp.build(sub)
     routes.build(sub)
     verify.build(sub)
     return p

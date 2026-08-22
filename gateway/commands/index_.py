@@ -1,4 +1,4 @@
-"""adg index — 构建/更新检索索引（供 adg search / adg anchor / adg mcp）。"""
+"""adg index — 构建/更新检索索引（供 adg search / adg anchor）。"""
 
 from __future__ import annotations
 

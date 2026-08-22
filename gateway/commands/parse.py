@@ -68,7 +68,7 @@ def run(args) -> int:
 
     overall = summary.exit_overall
 
-    # 解析后顺手建索引：让 adg search / anchor / mcp 立刻可用（失败不影响解析结论）
+    # 解析后顺手建索引：让 adg search / anchor 立刻可用（失败不影响解析结论）
     index_stats = None
     index_error = None
     if not args.no_index:

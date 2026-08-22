@@ -617,11 +617,10 @@ def run_matrix(work_root: Path | None = None, *, keep: bool = False) -> MatrixRe
         f"crash={r1.get('error', {}).get('kind')} timeout={r2.get('error', {}).get('kind')}",
     )
 
-    # ---- P5 Agent 接口：索引 / 检索 / 回溯 / MCP ----
+    # ---- P5 Agent 接口：索引 / 检索 / 回溯 ----
     from .agent_api import PackageView
     from .index import build_index, open_index
     from .index import search as index_search
-    from .mcp import MCPServer
 
     idx = build_index(out_dir, force=True)
     idx_manifest = load_manifest(out_dir)
@@ -657,31 +656,6 @@ def run_matrix(work_root: Path | None = None, *, keep: bool = False) -> MatrixRe
                    f"found={back['found']} path={back['matches'][0]['package_relative_path'] if back['matches'] else '—'}")
         caveat = view.search_elements("核对", limit=3).get("coverage_caveat")
         result.add("检索：未读全材料显性提示", bool(caveat), caveat or "无未读全材料")
-
-    server = MCPServer(package_dir, out_dir)
-    try:
-        init = server.handle({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18"}})
-        tools = server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})["result"]["tools"]
-        calls = {}
-        for tool in tools:
-            args = {"query": "核对"} if tool["name"] == "search_elements" else {}
-            if tool["name"] == "get_document":
-                args = {"ref": "合同笔记.txt", "max_elements": 1}
-            if tool["name"] == "resolve_anchor":
-                args = {"element_id": hit["element_id"] if hit else "el_none"}
-            reply = server.handle({"jsonrpc": "2.0", "id": 3, "method": "tools/call",
-                                   "params": {"name": tool["name"], "arguments": args}})
-            calls[tool["name"]] = "error" not in reply and not reply["result"]["isError"]
-        unknown = server.handle({"jsonrpc": "2.0", "id": 4, "method": "tools/call",
-                                 "params": {"name": "write_anything", "arguments": {}}})
-        result.add(
-            "MCP：六个只读工具可调用且拒绝未知工具",
-            len(tools) == 6 and all(calls.values()) and "error" in unknown
-            and init["result"]["serverInfo"]["name"] == "agent-data-gateway",
-            f"tools={len(tools)} ok={sum(calls.values())} 未知工具={'拒绝' if 'error' in unknown else '未拒绝'}",
-        )
-    finally:
-        server.close()
 
     # 包级覆盖
     manifest = load_manifest(out_dir)
