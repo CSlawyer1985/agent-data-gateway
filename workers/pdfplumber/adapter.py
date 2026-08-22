@@ -34,7 +34,9 @@ def handle_parse(req):
     truncated = False
     notes = []
 
-    with pdfplumber.open(req["source_path"]) as pdf:
+    # 加密 PDF：先试给定口令，再试空用户口令（所有者限制的常见情形）
+    password = (req.get("options") or {}).get("password", "")
+    with pdfplumber.open(req["source_path"], password=password) as pdf:
         total = len(pdf.pages)
         for i, page in enumerate(pdf.pages):
             if i >= _MAX_PAGES:

@@ -30,9 +30,9 @@ adg check                          # 另查这些 worker 在当前机器是否�
 
 ```text
 PDF 预检（加密检测、文字层采样、版面复杂度、扫描比例）
-├── 加密                    → qpdf worker（需密码）→ 否则 unresolved(encrypted)
+├── 加密                    → [pypdf, pdfplumber] 先试空用户口令/给定口令 → qpdf（需密码）→ 否则 unresolved(encrypted)
 ├── 结构不完整              → [pypdf, pdf_lite]
-├── 扫描/无文字层           → [mineru]
+├── 扫描/无文字层           → [mineru, pdf_render]（无容器/无 GPU 时渲染页位图，回灌 image 链 OCR）
 ├── 混合或复杂版面          → [mineru, docling, pdfplumber, pypdf, pdf_lite]
 └── 数字简单                → [docling, pdfplumber, pypdf, pdf_lite]
 ```

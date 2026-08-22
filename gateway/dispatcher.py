@@ -126,11 +126,15 @@ class Dispatcher:
             self.summary.new_items += len(produced)
         self._post_alignments(queue)
         # 基于磁盘最新 rendition 算覆盖（force 重跑时内存 cache 可能过时）
-        reliably_ids: set[str] = set()
-        for it in self.manifest.items:
-            docs = manifest_mod.list_rendition_docs(self.out_dir, it.source_id)
-            if quality_mod.reliably_read_item(it.kind, it.status, [d.get("quality", {}) for d in docs]):
-                reliably_ids.add(it.source_id)
+        docs_cache = {
+            it.source_id: [d.get("quality", {}) for d in manifest_mod.list_rendition_docs(self.out_dir, it.source_id)]
+            for it in self.manifest.items
+        }
+        # 包级判定：transform 型原件（扫描 PDF→页位图、DWG→DXF、视频→抽帧）自己没有内容
+        # rendition，内容在派生物里——只看自身 rendition 会把"已读到"误报成"没读到"。
+        reliably_ids = quality_mod.reliably_read_ids(
+            self.manifest.items, lambda sid: docs_cache.get(sid, [])
+        )
         inventory.sync_item_status(self.manifest, reliably_read_ids=reliably_ids)
         inventory.recompute_package_quality(self.manifest, reliably_read_ids=reliably_ids)
         manifest_mod.save_manifest(self.manifest, self.out_dir)
@@ -525,6 +529,12 @@ class Dispatcher:
         item.status = "parsed"
         item.errors = None
         item.best_quality = None
+        # 之前失败留下的 unresolved 条目必须清掉：否则报告会带着一条早已不存在的原因
+        self.manifest.integrity["unresolved_items"] = [
+            entry
+            for entry in self.manifest.integrity.get("unresolved_items", [])
+            if entry.get("source_id") != item.source_id or entry.get("stage") not in ("parse", None)
+        ]
         # 注意：transform 不计 summary.parsed（parse 成功才计）；transform 数量由派生 item 体现
         self.run_log.event(
             f"transform {item.package_relative_path} via {w.name} → {len(produced)} 产物"

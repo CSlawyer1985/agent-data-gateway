@@ -22,7 +22,7 @@ from .errors import ADGError
 from .index import IndexStats, build_index, index_meta, open_index, resolve_element, search
 from .manifest import default_out_dir, list_rendition_docs, load_manifest, mirror_relpath
 from .models import Item, PackageManifest
-from .quality import best_quality_rank, reliably_read_item
+from .quality import best_quality_rank, reliably_read_ids
 
 _HEX_RE = re.compile(r"^[0-9a-f]{8,64}$")
 
@@ -40,6 +40,7 @@ class PackageView:
     _index_stats: IndexStats | None = None
     _docs_cache: dict[str, list[dict]] = field(default_factory=dict)
     _dup_paths: dict[str, list[str]] | None = None
+    _reliable_cache: set[str] | None = None
 
     # ---------------- 生命周期 ----------------
 
@@ -355,8 +356,16 @@ class PackageView:
         return cached
 
     def _reliable(self, item: Item) -> bool:
-        docs = self._docs(item.source_id)
-        return reliably_read_item(item.kind, item.status, [d.get("quality", {}) for d in docs])
+        return item.source_id in self._reliable_ids()
+
+    def _reliable_ids(self) -> set[str]:
+        """包级判定并缓存：派生物读到即算原件读到（见 quality.reliably_read_ids）。"""
+        if self._reliable_cache is None:
+            self._reliable_cache = reliably_read_ids(
+                self.manifest.items,
+                lambda sid: [d.get("quality", {}) for d in self._docs(sid)],
+            )
+        return self._reliable_cache
 
     def _rendition_rank(self, doc: dict) -> tuple:
         elements = sum(len(b.get("elements", [])) for b in doc.get("content", {}).get("blocks", []))

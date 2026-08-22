@@ -31,6 +31,7 @@ DXF = "dxf"
 DWG = "dwg"
 PRESENTATION = "presentation"
 DATABASE = "database"
+CAJ = "caj"
 EXECUTABLE = "executable"
 UNKNOWN = "unknown"
 
@@ -60,6 +61,20 @@ _EXT_HINTS: dict[str, tuple[str, str, str | None]] = {
     ".xlsx": (XLSX, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", None),
     ".xls": (XLS, "application/vnd.ms-excel", None),
     ".csv": (CSV, "text/csv", None),
+    ".caj": (CAJ, "application/vnd.cnki.caj", "caj"),
+    ".rtf": (DOC, "application/rtf", "rtf"),
+    ".epub": (DOC, "application/epub+zip", "epub"),
+    ".ods": (XLSX, "application/vnd.oasis.opendocument.spreadsheet", "ods"),
+    ".odp": (PRESENTATION, "application/vnd.oasis.opendocument.presentation", "odp"),
+    ".docm": (DOCX, "application/vnd.ms-word.document.macroEnabled.12", "docm"),
+    ".xlsm": (XLSX, "application/vnd.ms-excel.sheet.macroEnabled.12", "xlsm"),
+    ".xlsb": (XLS, "application/vnd.ms-excel.sheet.binary.macroEnabled.12", "xlsb"),
+    ".pptm": (PRESENTATION, "application/vnd.ms-powerpoint.presentation.macroEnabled.12", "pptm"),
+    ".pps": (PRESENTATION, "application/vnd.ms-powerpoint", "pps"),
+    ".ppsx": (PRESENTATION, "application/vnd.openxmlformats-officedocument.presentationml.slideshow", "ppsx"),
+    ".pot": (PRESENTATION, "application/vnd.ms-powerpoint", "pot"),
+    ".kdh": (CAJ, "application/vnd.cnki.caj", "kdh"),
+    ".nh": (CAJ, "application/vnd.cnki.caj", "nh"),
     ".tsv": (CSV, "text/tab-separated-values", "tsv"),
     ".txt": (TEXT, "text/plain", None),
     ".md": (TEXT, "text/markdown", "markdown"),
@@ -130,11 +145,26 @@ _FTYP_BRANDS = {
 }
 
 
+# ODF/EPUB 的 mimetype 成员是格式的权威声明（未压缩存放在包首）
+_ODF_MIMETYPES: dict[str, tuple[str, str]] = {
+    "application/vnd.oasis.opendocument.text": (DOC, "odt"),
+    "application/vnd.oasis.opendocument.spreadsheet": (XLSX, "ods"),
+    "application/vnd.oasis.opendocument.presentation": (PRESENTATION, "odp"),
+    "application/epub+zip": (DOC, "epub"),
+}
+
+
 def _detect_pk_container(path: Path, head: bytes) -> DetectedType:
     """PK 开头：区分 OOXML（docx/xlsx/pptx）与普通 zip。"""
+    mimetype = ""
     try:
         with zipfile.ZipFile(path) as zf:
             names = set(zf.namelist()[:200])
+            if "mimetype" in names:
+                try:
+                    mimetype = zf.read("mimetype")[:120].decode("ascii", "ignore").strip()
+                except (zipfile.BadZipFile, OSError, KeyError):
+                    mimetype = ""
     except (zipfile.BadZipFile, OSError):
         return DetectedType("application/zip", "PK", "adg-magic", "low", ARCHIVE, "zip")
     prefix_names = {n.split("/")[0] + "/" for n in names if "/" in n}
@@ -144,6 +174,10 @@ def _detect_pk_container(path: Path, head: bytes) -> DetectedType:
         return DetectedType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "PK+xl/workbook.xml", "adg-magic", "high", XLSX)
     if "ppt/presentation.xml" in names or "ppt/" in prefix_names:
         return DetectedType("application/vnd.openxmlformats-officedocument.presentationml.presentation", "PK+ppt/", "adg-magic", "high", PRESENTATION)
+    odf = _ODF_MIMETYPES.get(mimetype)
+    if odf:
+        kind, fmt = odf
+        return DetectedType(mimetype, f"PK+mimetype:{fmt}", "adg-magic", "high", kind, fmt)
     if "mimetype" in names and any(n.startswith("word/") or n.startswith("content.xml") for n in names):
         return DetectedType("application/vnd.oasis.opendocument.text", "PK+odf", "adg-magic", "medium", DOC, "odt")
     return DetectedType("application/zip", "PK\\x03\\x04", "adg-magic", "high", ARCHIVE, "zip")
@@ -242,6 +276,11 @@ def detect(path: Path | str, *, head: bytes | None = None) -> DetectedType:
         return DetectedType("image/gif", "GIF", "adg-magic", "high", IMAGE, "gif")
     if head.startswith(b"BM"):
         return DetectedType("image/bmp", "BMP", "adg-magic", "high", IMAGE, "bmp")
+    if head.startswith(b"{\\rtf"):
+        return DetectedType("application/rtf", "RTF", "adg-magic", "high", DOC, "rtf")
+    if head.startswith(b"HN\x00\x00") or head.startswith((b"CAJ\x00", b"KDH ", b"KDH\x00")):
+        # 中国知网 CAJ/KDH/HN 系列。头部常带 "Tsinghua Tongfang Optical Disc Co.,Ltd." 标记。
+        return DetectedType("application/vnd.cnki.caj", "CNKI CAJ/HN", "adg-magic", "high", CAJ, "caj")
     if head.startswith(b"8BPS"):
         return DetectedType("image/vnd.adobe.photoshop", "PSD", "adg-magic", "high", IMAGE, "psd")
     if head.startswith(b"RIFF") and head[8:12] == b"WEBP":

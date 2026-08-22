@@ -16,9 +16,27 @@ def handle_parse(req):
     from pypdf import PdfReader
 
     reader = PdfReader(req["source_path"])
+    notes = ["pypdf 页级提取：无版面坐标，锚点为页级"]
     if reader.is_encrypted:
-        return {"type": "parse_result", "status": "failed",
-                "error": {"kind": "unsupported", "message": "PDF 加密（需 qpdf worker + 密码）"}}
+        # 实务中大量"加密 PDF"只是所有者限制（打印/复制），用户口令为空——
+        # 任何阅读器都能直接打开。不试空口令就报"需要密码"是谎报。
+        password = (req.get("options") or {}).get("password", "")
+        try:
+            rc = reader.decrypt(password)
+        except Exception as e:  # 算法不支持等
+            rc = 0
+            decrypt_error = f"{type(e).__name__}: {e}"
+        else:
+            decrypt_error = None
+        if not rc:
+            msg = "PDF 需要用户口令：adg parse --worker-option password=xxx"
+            if decrypt_error:
+                msg += f"（解密失败: {decrypt_error}）"
+            return {"type": "parse_result", "status": "failed",
+                    "error": {"kind": "unsupported", "message": msg}}
+        notes.append(
+            "原件带加密：已用" + ("给定口令" if password else "空用户口令（仅所有者限制）") + "解除后读取——加密事实随产物记录"
+        )
     blocks = []
     text_chars = 0
     for i, page in enumerate(reader.pages):
@@ -48,7 +66,7 @@ def handle_parse(req):
                 "source_anchoring": "warning",
             },
             "fitness": {"quotation": True, "layout_sensitive_analysis": False},
-            "notes": ["pypdf 页级提取：无版面坐标，锚点为页级"],
+            "notes": notes,
             "truncated": False,
         },
     }

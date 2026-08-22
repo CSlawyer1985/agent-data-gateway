@@ -62,7 +62,9 @@ class EndToEndTest(unittest.TestCase):
         """parse 后：邮件附件回灌使 item +1，完整性仍成立。"""
         m = self._full_pipeline()
         self.assertTrue(m.integrity["all_items_accounted"])
-        self.assertEqual(len(m.items), EXPECTED_ITEMS_AFTER_SCAN + 1)  # + 邮件附件
+        # 每一项都要有来路：scan 基线 + 邮件附件回灌 + （本机装了 pdf_render 时）扫描件页位图
+        derived_pages = [i for i in m.items if (i.derived_from or {}).get("tool") == "pdf_render"]
+        self.assertEqual(len(m.items), EXPECTED_ITEMS_AFTER_SCAN + 1 + len(derived_pages))
 
     def test_no_path_traversal_escaped(self):
         self._full_pipeline()

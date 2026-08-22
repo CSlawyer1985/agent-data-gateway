@@ -129,5 +129,42 @@ def reliably_read_item(kind: str, status: str, rendition_qualities: list[dict]) 
     return reliably_read(rendition_qualities)
 
 
+def reliably_read_ids(items, qualities_of) -> set[str]:
+    """包级判定：返回"内容已可靠读取"的 source_id 集合。
+
+    单看自身 rendition 是不够的：transform 型原件（扫描 PDF → 页位图、DWG → DXF/渲染图、
+    视频 → 抽帧、PST → EML）自己没有内容 rendition，内容在派生物里。若只按自身 rendition 判，
+    报告会把"已经通过派生物读到"误报成"没读到"——这正是本项目要防的那类失败。
+
+    规则：① 自身 rendition 可靠 → 可靠；② 自身无内容 rendition 但已 parsed，且至少一个
+    派生物/成员可靠 → 可靠（沿派生链传递，支持 PDF → 页位图 → OCR 这样的多级）。
+    """
+    ok: set[str] = set()
+    for it in items:
+        if reliably_read_item(it.kind, it.status, qualities_of(it.source_id)):
+            ok.add(it.source_id)
+
+    children: dict[str, list] = {}
+    for it in items:
+        parent = None
+        if getattr(it, "derived_from", None):
+            parent = it.derived_from.get("source_id")
+        elif getattr(it, "origin", None):
+            parent = it.origin.get("container_source_id")
+        if parent:
+            children.setdefault(parent, []).append(it)
+
+    changed = True
+    while changed:  # 逐层上溯直到不动点
+        changed = False
+        for it in items:
+            if it.source_id in ok or it.status not in ("parsed", "parsed_with_warnings"):
+                continue
+            if any(child.source_id in ok for child in children.get(it.source_id, ())):
+                ok.add(it.source_id)
+                changed = True
+    return ok
+
+
 def best_quality_rank(overall: str | None) -> int:
     return {"pass": 2, "pass_with_warnings": 1, "fail": 0, None: -1}[overall]

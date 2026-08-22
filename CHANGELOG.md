@@ -12,6 +12,29 @@
 - whisper 模型国内路径写入安装指引（setup 提示 + worker.json notes）：huggingface.co 直连慢/易断，建议 ModelScope 下载 `Systran/faster-whisper-small` 后经 `--worker-option model=<本地目录>` 注入；`.gitignore` 新增 `workers/*/models/` 防止模型权重误入库。
 - 新增 `tests/test_setup_index.py`（镜像解析优先级 ×4）。
 
+### 能力补齐与核心误报修复：真实包覆盖率 88.6% → 95.1%
+
+针对真实材料包里剩下的 4 项未解决逐一排查，其中两项根本不是能力缺口而是缺陷：
+
+| 材料 | 原判定 | 真相 / 处置 |
+|------|--------|------------|
+| `宣传册-未OCR.pdf` | "PDF 加密 → qpdf（需密码）" | **谎报**。该文件是空用户口令的 AES-256（仅所有者限制），任何阅读器都能直接打开。我们从来没试过空口令 |
+| `寄快递…-部分OCR.pdf` | "扫描/无文字层 → MinerU（镜像未构建）" | 本机无 Docker/GPU 时扫描件彻底读不了——新增本地位图链 |
+| `…研究.caj` | "类型无法识别" | 知网 CAJ（HN 变体），可识别；无开源解析器，应给出可执行建议而不是"不认识" |
+| `CAD图纸.dwg` | 缺 `dwg2dxf` | 确属能力缺口，`brew install libredwg` 后可解，指引已正确 |
+
+修复：
+
+- **加密 PDF**：pypdf/pdfplumber adapter 先试给定口令再试空用户口令，成功后在 notes 记录"原件带加密，已用空用户口令解除"（加密事实属证据信息，必须随产物留痕）；路由链 `qpdf` → `pypdf → pdfplumber → qpdf`。真需要口令时才报"需要用户口令"并给出 `--worker-option password=` 指引。
+- **扫描 PDF**：新增 `pdf_render` worker（pypdfium2，Apache-2.0，纯 wheel 无系统依赖），把页面渲染为位图交给既有 image 链 OCR；`pdf-scanned` 链变为 `mineru → pdf_render`。实测 6 页扫描件全部 OCR 成功且带 bbox 锚点。
+- **CAJ**：magic 表新增 HN/CAJ/KDH 魔数与 `.caj/.kdh/.nh` 扩展名；路由显式 `unresolved` 并给出"用 CAJViewer 导出 PDF 后重新入包"的可执行建议——从"我不认识"升级为"我知道是什么、为什么读不了、你该怎么办"。
+- **接入 anydoc**（Firecrawl，Rust，MIT）：14 种办公格式 → 结构化文档模型，无 ML 模型、无系统依赖。实测对比后**只放在它真正更强的位置**：①补齐此前完全无 parser 的 RTF/EPUB/ODS/ODP 及 `.docm/.xlsm/.xlsb/.pptm/.pps/.ppsx/.pot`；②作为 lite parser 之后、LibreOffice/Docling 之前的零依赖第二意见。**不接 PDF**——anydoc 的 PDF 只出 Markdown，拿不到页码锚点，比现有链更弱。合并单元格经 grid 的 origin/span 保留。
+- **格式识别**：ODF/EPUB 改按 zip 内 `mimetype` 成员（格式的权威声明）判断，不再靠猜目录名；新增 RTF 魔数。
+
+**核心误报修复（不是本轮新增代码引入，是原有逻辑）**：transform 型原件（扫描 PDF → 页位图、DWG → DXF、视频 → 抽帧、PST → EML）自己没有内容 rendition，内容在派生物里。此前 `reliably_read` 只看自身 rendition，导致 **6 页位图全部 OCR 成功之后，报告仍说这份 PDF "未可靠读取"，并附一条早已不存在的旧错误**。这是"报告说没读到、其实读到了"，比漏读更误导人。修复：新增 `quality.reliably_read_ids()` 做派生闭包判定（支持 PDF → 页位图 → OCR 多级上溯），dispatcher / agent_api / index 统一改用；`_after_transform` 成功后清除该 item 的陈旧 unresolved 条目。
+
+另修：`pdf_render` adapter 起初在 `parse_result` 顶层多放了 `truncated` 字段，被 Worker Protocol 严格录取拦下（schema `additionalProperties: false`）——契约校验按设计工作，字段已移入 `metrics`。
+
 ### 缺陷修复：Agent 查询层的六处静默错误答案
 
 本轮自查发现的问题全部位于本次新增的查询层，均已修复并补回归测试：
@@ -78,16 +101,18 @@
 
 ### 验证结果
 
-- `python3 -m unittest discover -s tests`：130 项通过（新增 31 项覆盖切分/索引/检索/回溯/六个查询操作，含上表六处缺陷的回归用例）。
-- 源码 `adg verify`：25/27 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
-  新增 5 条验证项：索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、未读全材料显性提示、
-  element_id 回溯到原件。
+- `python3 -m unittest discover -s tests`：140 项通过（本迭代累计新增 41 项：Agent 接口 31 项 + 派生闭包判定 4 项 + CAJ/RTF/ODF-EPUB 识别 3 项 + anydoc 与新链路由 3 项）。
+- 源码 `adg verify`：26/28 通过、0 失败、2 项因环境依赖跳过（officecli 不可用、pypdf 已装故降级用例跳过）；
+  新增 5 条 Agent 接口验证项（索引覆盖全部 item、新鲜度指纹避免重复重建、中文两字词命中且带锚点、
+  未读全材料显性提示、element_id 回溯到原件）；「扫描件」一项改为按本机能力断言——有 pdf_render 就必须
+  渲染成位图并让派生物入账，没有就必须显性失败，两种情形都不允许静默；「降级链失败原因聚合」改用强制
+  全不可用链，与本机能力解耦。
 - 独立 wheel 安装验证：33 个 Worker 全部可发现，`adg setup --worker pypdf --dry-run` 可定位目标；
   P5 两个模块（index/agent_api）与四个新子命令随 wheel 发布；
   干净 venv 内 `adg verify` 26/27 通过、0 失败，仅 officecli 不可用一项跳过。
-- 真实材料包（23 个物理文件，展开/派生后 35 items）：全部入账；补装 worker 后 31/35 可靠读取（88.57%），
-  4 项 unresolved（CAJ 类型未识别、DWG 缺 dwg2dxf、加密 PDF 缺 qpdf、扫描 PDF 缺 MinerU 镜像）全部带原因与补装建议，0 项假成功；
-  索引 3100 个元素、FTS5 引擎，中文检索与锚点回溯在真实材料上实测通过。
+- 真实材料包（23 个物理文件，展开/派生后 41 items）：全部入账；**39/41 可靠读取（95.12%）**，
+  仅剩 2 项 unresolved——DWG（`brew install libredwg` 后可解）与 CAJ（知网专有格式，需 CAJViewer 导出 PDF），
+  均带原因与可执行建议，0 项假成功；索引 3308 个元素、FTS5 引擎，加密 PDF 与扫描件 OCR 内容均已可检索、可回溯。
 
 ## v0.1.0（2026-08-05）
 

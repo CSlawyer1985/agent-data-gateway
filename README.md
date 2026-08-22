@@ -44,10 +44,10 @@
 | **版本** | v0.1.0（2026-08-05，首次发布） |
 | **编排器核心** | ✅ 完整可用：发现/安全展开/类型识别/特征路由/调度/质量/锚点/谱系/渲染，纯 stdlib |
 | **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
-| **外部 worker** | ✅ 19 个适配器随 wheel 发布，按环境安装；可用性以本机 `adg check` 为准 |
+| **外部 worker** | ✅ 21 个适配器随 wheel 发布（含 anydoc / pdf_render），按环境安装；可用性以本机 `adg check` 为准 |
 | **Agent 接口** | ✅ 元素级检索索引 + `adg index/search/anchor/get`：命中带来源锚点与可引用标注，纯 stdlib |
-| **验证矩阵** | ✅ `adg verify` 26/28 通过（2 跳过为环境依赖项） |
-| **真实数据验证** | ✅ input 混合材料包（23 物理文件 → 展开后 35 items / 嵌套目录 / 压缩包 / 音视频）：全量入账、覆盖率 88.6%、4 项未解决全部带原因与补装建议 |
+| **验证矩阵** | ✅ `adg verify` 26/28 通过、0 失败（2 跳过为环境依赖项） |
+| **真实数据验证** | ✅ input 混合材料包（23 物理文件 → 展开/派生后 41 items）：全量入账、覆盖率 **95.1%**、仅剩 2 项未解决（DWG 待装 libredwg、CAJ 属知网专有格式），均带原因与可执行建议 |
 | **资料利用率** | 📋 设计已定稿未实现：增益轨（多视角并行）+ 信号探测度量 + 快速/均衡/质量三档成本控制（[ADR 0002](docs/adr/0002-utilization-as-first-class-goal.md) / [spec 11](docs/spec/11-utilization.md)） |
 | **云端扩展** | 📋 设计预留（远程 worker 后端、云端模型路由），未实现 |
 | **Extended Packs** | 📋 规划（CAD 深入/GIS/DICOM 等），未发布 |
@@ -191,7 +191,7 @@ agent-data-gateway/
 │   ├── agent_api.py  # 六个只读查询操作的唯一实现（各查询子命令共用）
 │   └── selftest.py   # 验证矩阵（程序化 fixtures，无二进制资产）
 ├── packs/legal/      # Legal Pack：11 个 stdlib lite parser + 预检钩子
-├── workers/          # 19 个外部 worker 适配器（docling/mineru/whisper/... 各自 venv）
+├── workers/          # 21 个外部 worker 适配器（docling/mineru/whisper/anydoc/pdf_render/... 各自 venv）
 ├── models/           # 冻结 Schema v0.1（EvidenceDocument/Manifest/WorkerProtocol/Quality/Security）
 ├── docs/spec/        # 12 份规格文档（00-11）
 ├── docs/adr/         # 契约权威、写入所有权等架构决策记录
@@ -221,6 +221,7 @@ agent-data-gateway/
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
 | 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |
 | 2026-08-22 | Unreleased | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
+| 2026-08-22 | Unreleased | 能力/缺陷 | 加密 PDF 先试空用户口令（多数只是所有者限制，此前一律谎报"需密码"）；扫描 PDF 新增 pdf_render 本地位图链（无需 Docker/GPU）；接入 anydoc（Rust/MIT）补齐 RTF/EPUB/ODS/ODP 等格式；CAJ 从"类型无法识别"升级为带建议的显性未解决；修复"内容经派生物提取却报没读到"的核心误报。真实包覆盖率 88.6%→95.1% |
 | 2026-08-22 | Unreleased | 设计决策 | 确立「资料利用率」为一等目标：降级链（or 语义）之外增加增益轨（and 语义），多视角并行提取；分母靠廉价信号探测而非估计；多轨分歧只记录不裁决；成本靠探测门控/页级增益/身份缓存/条件升级/预算调度五机制，`--profile fast\|balanced\|quality` 是其上的界面。ADR 0002 + spec 11，实现未开始 |
 | 2026-08-22 | Unreleased | Agent 接口（P5） | 元素级检索索引（SQLite/FTS5，中文逐字切分，新鲜度指纹增量复用）+ `adg index/search/anchor/get`：命中带来源锚点、`quotable` 与未读全提示；查询逻辑单一权威（`gateway.agent_api`）；`adg verify` 20/22 → 25/27；新增 24 项测试 |
 | 2026-08-22 | Unreleased | 安装体验 | `adg setup` 支持 `--index-url`/`ADG_PIP_INDEX_URL` 国内镜像（不污染全局 pip 配置）；whisper 模型 ModelScope 国内路径指引 + `--worker-option model=` 本地注入；`.gitignore` 忽略 worker 本地模型权重；真实材料包补装 5 个 worker 后覆盖率 34.3%→88.6% |

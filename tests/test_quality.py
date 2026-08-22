@@ -54,5 +54,53 @@ class QualityAggregationTest(unittest.TestCase):
         self.assertFalse(quality.reliably_read_item("archive", "unresolved", []))
 
 
+class DerivedCoverageTest(unittest.TestCase):
+    """派生闭包：内容经派生物提取的原件也算读到。
+
+    否则扫描 PDF → 页位图 → OCR 成功之后，报告仍说"没读到"——
+    这是"报告说没读到、其实读到了"，比漏读更误导人。
+    """
+
+    class _Item:
+        def __init__(self, sid, kind, status, derived_from=None, origin=None):
+            self.source_id = sid
+            self.kind = kind
+            self.status = status
+            self.derived_from = derived_from
+            self.origin = origin
+
+    OK_Q = [{"overall": "pass", "fitness": {"fact_extraction": True}}]
+
+    def test_transform_parent_counted_via_derived_child(self):
+        parent = self._Item("sha256:pdf", "pdf", "parsed")
+        child = self._Item("sha256:png", "image", "parsed", derived_from={"source_id": "sha256:pdf"})
+        ids = quality.reliably_read_ids(
+            [parent, child], lambda sid: self.OK_Q if sid == "sha256:png" else []
+        )
+        self.assertIn("sha256:pdf", ids)
+        self.assertIn("sha256:png", ids)
+
+    def test_multi_level_chain(self):
+        """PDF → 页位图 → OCR：多级派生要沿链上溯。"""
+        a = self._Item("sha256:a", "pdf", "parsed")
+        b = self._Item("sha256:b", "pdf", "parsed", derived_from={"source_id": "sha256:a"})
+        c = self._Item("sha256:c", "image", "parsed", derived_from={"source_id": "sha256:b"})
+        ids = quality.reliably_read_ids([a, b, c], lambda sid: self.OK_Q if sid == "sha256:c" else [])
+        self.assertEqual({"sha256:a", "sha256:b", "sha256:c"}, ids)
+
+    def test_parent_not_counted_when_children_failed(self):
+        """派生物没读成，原件也不能算读到——不能把失败洗成成功。"""
+        parent = self._Item("sha256:dwg", "dwg", "parsed")
+        child = self._Item("sha256:dxf", "dxf", "failed", derived_from={"source_id": "sha256:dwg"})
+        ids = quality.reliably_read_ids([parent, child], lambda sid: [])
+        self.assertNotIn("sha256:dwg", ids)
+
+    def test_unresolved_parent_never_counted(self):
+        parent = self._Item("sha256:x", "pdf", "unresolved")
+        child = self._Item("sha256:y", "image", "parsed", derived_from={"source_id": "sha256:x"})
+        ids = quality.reliably_read_ids([parent, child], lambda sid: self.OK_Q if sid == "sha256:y" else [])
+        self.assertNotIn("sha256:x", ids)
+
+
 if __name__ == "__main__":
     unittest.main()

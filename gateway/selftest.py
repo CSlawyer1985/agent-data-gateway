@@ -529,19 +529,46 @@ def run_matrix(work_root: Path | None = None, *, keep: bool = False) -> MatrixRe
         f"parser={(corrupt_doc or {}).get('parser', {}).get('name')} layout={q_pdflite.get('layout_preservation')} quotation={q_pdflite.get('fitness', {}).get('quotation')}",
     )
     enc_paths = set(manifest.quality.get("encrypted", []))
-    result.add(
-        "质量多维：扫描件失败显性化 + 加密件入清单",
-        scanned_failed and "encrypted.pdf" in enc_paths,
-        f"scanned={scanned_item.status if scanned_item else '?'} encrypted={sorted(enc_paths)}",
-    )
+    result.add("质量多维：加密件入清单", "encrypted.pdf" in enc_paths, f"encrypted={sorted(enc_paths)}")
+
+    # 扫描件：本机有 pdf_render 就该渲染成位图交给 OCR（派生物入账）；没有就必须显性失败。
+    # 两种情形都不允许"静默地当作读完了"。
+    pdf_render_w = registry.get("pdf_render")
+    pdf_render_ok = False
+    if pdf_render_w is not None:
+        pdf_render_ok, _ = registry.availability(pdf_render_w, env)
+    scanned_pages = [
+        it for it in manifest.items if (it.derived_from or {}).get("tool") == "pdf_render"
+    ]
+    if pdf_render_ok:
+        ok = scanned_item is not None and scanned_item.status == "parsed" and bool(scanned_pages)
+        detail = f"status={scanned_item.status if scanned_item else '?'} 派生页位图={len(scanned_pages)}"
+    else:
+        ok = scanned_failed
+        detail = f"pdf_render 不可用 → 须显性失败；status={scanned_item.status if scanned_item else '?'}"
+    result.add("质量多维：扫描件按本机能力处理且不静默", ok, detail)
     empty_ok = "empty.txt" in set(manifest.quality.get("empties", []))
     result.add("质量多维：空文件入清单", empty_ok, "")
 
-    # 回归 P2-1：降级链失败时输出完整失败链（此前只留链尾原因，误导排障方向）
-    chain_msg = (scanned_item.errors or [""])[0] if scanned_item else ""
+    # 回归 P2-1：降级链失败时输出完整失败链（此前只留链尾原因，误导排障方向）。
+    # 强制一条全不可用的链，保证这条回归与本机能力无关。
+    dead_chain_dir = work_root / "deadchain"
+    dead_chain_dir.mkdir(parents=True, exist_ok=True)
+    (dead_chain_dir / "scanned.pdf").write_bytes(make_pdf_scanned())
+    dc_out = work_root / "deadchain-out"
+    dc_disc = discover_package(dead_chain_dir, dc_out)
+    dc_m = build_manifest(dc_disc)
+    recompute_package_quality(dc_m, reliably_read_ids=set())
+    save_manifest(dc_m, dc_out)
+    Dispatcher(dead_chain_dir, dc_out, load_manifest(dc_out), registry, env=env,
+               options=ParseOptions(force=True, no_abs_log=True,
+                                    chain_override={"pdf": ["mineru", "docling"]})).run()
+    dc_item = next((it for it in load_manifest(dc_out).items if it.package_relative_path == "scanned.pdf"), None)
+    chain_msg = (dc_item.errors or [""])[0] if dc_item else ""
     result.add(
         "降级链：失败原因聚合输出",
-        scanned_failed and "失败链:" in chain_msg and "mineru" in chain_msg,
+        dc_item is not None and dc_item.status in ("failed", "unresolved")
+        and "失败链:" in chain_msg and "mineru" in chain_msg,
         f"msg={chain_msg[:120]}",
     )
 

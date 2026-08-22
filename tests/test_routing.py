@@ -14,9 +14,11 @@ from gateway.magic import extension_catalog
 class RoutingTableTest(unittest.TestCase):
     def test_pdf_feature_routes_preserve_priority_and_chains(self) -> None:
         cases = [
-            ({"pdf_class": "encrypted", "possibly_corrupt": True}, ["qpdf"]),
+            # 加密：先试能本地解开的（多数只是所有者限制、用户口令为空），qpdf 兜底
+            ({"pdf_class": "encrypted", "possibly_corrupt": True}, ["pypdf", "pdfplumber", "qpdf"]),
             ({"possibly_corrupt": True}, ["pypdf", "pdf_lite"]),
-            ({"pdf_class": "scanned"}, ["mineru"]),
+            # 扫描：MinerU 需要 Docker，无容器机器上 pdf_render 渲染位图交给 image 链 OCR
+            ({"pdf_class": "scanned"}, ["mineru", "pdf_render"]),
             (
                 {"pdf_class": "mixed_complex"},
                 ["mineru", "docling", "pdfplumber", "pypdf", "pdf_lite"],
@@ -40,6 +42,31 @@ class RoutingTableTest(unittest.TestCase):
         for format_, chain in expected.items():
             with self.subTest(format=format_):
                 self.assertEqual(chain, routing.resolve_chain("email", format_, {})[0])
+
+    def test_office_chains_include_anydoc_after_lite_parsers(self) -> None:
+        """anydoc 是零系统依赖的第二意见，应排在 lite parser 之后、重型工具之前。"""
+        for kind, lite in (("docx", "docx_lite"), ("doc", "doc_lite"), ("xlsx", "xlsx_lite"), ("xls", "xls")):
+            with self.subTest(kind=kind):
+                chain = routing.resolve_chain(kind, None, {})[0]
+                self.assertIn("anydoc", chain)
+                self.assertLess(chain.index(lite), chain.index("anydoc"))
+                for heavy in ("docling", "officecli"):
+                    if heavy in chain:
+                        self.assertLess(chain.index("anydoc"), chain.index(heavy))
+
+    def test_formats_without_builtin_parser_route_to_anydoc_first(self) -> None:
+        """RTF/EPUB/ODS/ODP 此前无 parser——现在必须有明确的处理链，且不再靠 lite parser 空跑。"""
+        for kind, fmt in (("doc", "rtf"), ("doc", "epub"), ("xlsx", "ods"), ("presentation", "odp")):
+            with self.subTest(kind=kind, format=fmt):
+                chain = routing.resolve_chain(kind, fmt, {})[0]
+                self.assertEqual("anydoc", chain[0])
+
+    def test_caj_is_recognized_but_honestly_unresolved(self) -> None:
+        """知网 CAJ 无开源解析器：必须从"类型无法识别"升级为"知道是什么 + 怎么办"。"""
+        rows = [row for row in routing.route_catalog() if row["kind"] == "caj"]
+        self.assertEqual(1, len(rows))
+        self.assertEqual("unresolved", rows[0]["action"])
+        self.assertIn("CAJViewer", rows[0]["reason"] + str(rows[0].get("tools") or ""))
 
     def test_every_recognized_extension_and_kind_has_a_catalog_route(self) -> None:
         rows = routing.route_catalog()

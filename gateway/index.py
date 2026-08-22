@@ -23,9 +23,15 @@ from typing import Any, Iterable
 
 from . import SCHEMA_VERSION, __version__
 from .errors import ADGError, DataIntegrityError
-from .manifest import OutputWriteLock, internal_dir, load_manifest, load_rendition
+from .manifest import (
+    OutputWriteLock,
+    internal_dir,
+    list_rendition_docs,
+    load_manifest,
+    load_rendition,
+)
 from .models import PackageManifest
-from .quality import best_quality_rank, reliably_read_item
+from .quality import best_quality_rank, reliably_read_ids
 
 INDEX_SCHEMA_VERSION = "1"
 INDEX_FILENAME = "index.sqlite3"
@@ -310,6 +316,12 @@ def _build_locked(out_dir: Path, manifest: PackageManifest, fingerprint: str) ->
 
 def _fill(conn: sqlite3.Connection, out_dir: Path, manifest: PackageManifest, stats: IndexStats) -> None:
     eid = 0
+    docs_cache = {
+        item.source_id: list_rendition_docs(out_dir, item.source_id) for item in manifest.items
+    }
+    reliable_ids = reliably_read_ids(
+        manifest.items, lambda sid: [d.get("quality", {}) for d in docs_cache.get(sid, [])]
+    )
     for item in manifest.items:
         docs: list[dict] = []
         for rendition_id in item.renditions:
@@ -319,7 +331,7 @@ def _fill(conn: sqlite3.Connection, out_dir: Path, manifest: PackageManifest, st
                     f"manifest 引用的 rendition 无法读取: {item.package_relative_path} / {rendition_id}"
                 )
             docs.append(doc)
-        reliable = reliably_read_item(item.kind, item.status, [d.get("quality", {}) for d in docs])
+        reliable = item.source_id in reliable_ids
         conn.execute(
             "INSERT OR REPLACE INTO items VALUES (?,?,?,?,?,?,?,?,?,?)",
             (
