@@ -35,11 +35,12 @@ from .quality import best_quality_rank, reliably_read_ids
 # 改了字段语义才递增，让下游有可判定的兼容依据（spec 10）。
 AGENT_API_VERSION = "1"
 
-# extraction_coverage 极易被读成「信息提取了多少」。它是文件级的，与文件内的
-# 利用率（spec 11）正交；两个百分比并列时 Agent 必须分得开（ADR 0003 决策 7）。
+# extraction_coverage 极易被读成「信息提取了多少」。它只数文件，不看文件内部
+# （ADR 0003 决策 7）。文件内的信息种类由 item.signals 陈述，且不做成比值（ADR 0004）。
 COVERAGE_MEANING = (
-    "文件级完整性：多少份材料被可靠读取。不是文件内信息的利用率——"
+    "文件级完整性：多少份材料被可靠读取。不是材料内部的信息提取比例——"
     "一份扫描件的文字层读到了，图里的印章与手写签名仍可能没提取。"
+    "文件内有哪些种类的信息见 item.signals（三态事实，不是比值）。"
 )
 
 _HEX_RE = re.compile(r"^[0-9a-f]{8,64}$")

@@ -245,6 +245,7 @@ agent-data-gateway/
 | [0001 契约权威与写入所有权](docs/adr/0001-contract-authority-and-write-ownership.md) | 谁拥有哪个事实的定稿权；Schema / spec / README 冲突时以谁为准；同一输出目录单写者 |
 | [0002 资料利用率作为一等目标](docs/adr/0002-utilization-as-first-class-goal.md) | 完整性之外并列利用率；降级链（or）之外增加增益轨（and）。**设计已定稿，实现未开始** |
 | [0003 分发形态与目标运行环境](docs/adr/0003-distribution-and-target-runtime.md) | 面向开发机上的编码 Agent，走 pip / uv tool 分发；冻结打包已实测否决；venv 落 `~/.adg`；不做 Agent 自动发现入口 |
+| [0004 利用率不是一个可计算的比值](docs/adr/0004-utilization-is-not-a-ratio.md) | 撤销利用率度量：分子需要 ground truth，有 ground truth 就不需要这些工具。改输出「探测到什么 + 跑过什么」两组事实，不做除法、不评判结果好坏 |
 
 ## 迭代日志
 
@@ -258,6 +259,7 @@ agent-data-gateway/
 | 2026-08-22 | v0.2.0 | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
 | 2026-08-23 | v0.2.0 | 缺陷/校准 | officecli 适配器实测校准：补 `--json`、按 `{success,data.results}` 解析、正文改段落级锚点、批注/修订经 anchoredTo 挂回段落；**查询失败不再退化成「0 条」而是显性失败**。同时修正 docx fixture 为合规 OOXML（此前缺 `document.xml.rels` 与 Content_Types 声明，Word 与任何规范实现都读不到那条批注，验证矩阵在测一个假场景）。L3 跨 parser 对齐首次真实通过：916 元素配对 score=1.0 |
 | 2026-08-23 | v0.2.0 | 能力/缺陷 | DWG 改为 dwgread 直读（dwg2dxf 中转的 DXF 结构性损坏，ezdxf.recover 亦拒绝加载），真实图纸提出 9777 条文字并带图层/句柄锚点；修复所有 adapter 用 UTF-8 硬解子进程输出（中文工具输出 GBK 一个字节即崩）。覆盖率 95.1%→**97.6%**，仅剩 CAJ 一项 |
+| 2026-08-23 | v0.2.0 | 设计修正 | 撤销「资料利用率」作为比值度量（ADR 0004 修订 ADR 0002 决策 1）：分子「已成功提取的信号数」需要 ground truth，而有 ground truth 就不必调用这些解析工具——原理上不可知，实现到接分子时暴露。改为输出「探测到哪些信号（三态）+ 实际跑过哪些工具」两组并列事实，不做除法、不合成评分，哪个结果好由调用方判断。增益轨方向不变，被推翻的只是给它打分的尺子 |
 | 2026-08-23 | v0.2.0 | 设计决策 | 确立分发形态与目标运行环境：调用者是开发机上的编码 Agent，分发走 `pip`/`uv tool`，不做 `.app`/图形界面/代码签名。PyInstaller 冻结**实测否决**——能打出 20MB 单文件并发现 36 个 worker，但冻结二进制无 `venv`/`ensurepip` 装不了三方包，且 onefile 每次解包到新临时目录、装了下次即失。worker venv 落点随之移出 `site-packages`，改由 `ADG_HOME`（默认 `~/.adg`）承载。ADR 0003 |
 | 2026-08-22 | v0.2.0 | 能力/缺陷 | 加密 PDF 先试空用户口令（多数只是所有者限制，此前一律谎报"需密码"）；扫描 PDF 新增 pdf_render 本地位图链（无需 Docker/GPU）；接入 anydoc（Rust/MIT）补齐 RTF/EPUB/ODS/ODP 等格式；CAJ 从"类型无法识别"升级为带建议的显性未解决；修复"内容经派生物提取却报没读到"的核心误报。真实包覆盖率 88.6%→95.1% |
 | 2026-08-22 | v0.2.0 | 设计决策 | 确立「资料利用率」为一等目标：降级链（or 语义）之外增加增益轨（and 语义），多视角并行提取；分母靠廉价信号探测而非估计；多轨分歧只记录不裁决；成本靠探测门控/页级增益/身份缓存/条件升级/预算调度五机制，`--profile fast\|balanced\|quality` 是其上的界面。ADR 0002 + spec 11，实现未开始 |

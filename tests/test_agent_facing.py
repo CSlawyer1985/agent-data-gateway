@@ -86,7 +86,8 @@ class TestCoverageDisambiguation(unittest.TestCase):
         """extraction_coverage 是文件级完整性，说明里必须明确排除利用率读法。"""
         self.assertIn("完整性", COVERAGE_MEANING)
         self.assertIn("不是", COVERAGE_MEANING)
-        self.assertIn("利用率", COVERAGE_MEANING)
+        self.assertIn("提取比例", COVERAGE_MEANING)
+        self.assertIn("signals", COVERAGE_MEANING)
 
 
 if __name__ == "__main__":

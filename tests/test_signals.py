@@ -30,7 +30,9 @@ class TestThreeStateDiscipline(unittest.TestCase):
         self.assertEqual(signals.normalize("unknown", None), {})
 
 
-class TestUtilizationMath(unittest.TestCase):
+class TestSignalFacts(unittest.TestCase):
+    """输出是事实清单，不是比值（ADR 0004）。"""
+
     def setUp(self):
         self.sig = {
             "text_layer": signals.PRESENT,
@@ -39,25 +41,26 @@ class TestUtilizationMath(unittest.TestCase):
             "bookmarks": signals.ABSENT,
         }
 
-    def test_denominator_is_present_only(self):
-        self.assertEqual(sorted(signals.denominator(self.sig)), ["page_images", "text_layer"])
+    def test_present_lists_only_what_was_found(self):
+        self.assertEqual(sorted(signals.present_signals(self.sig)), ["page_images", "text_layer"])
 
-    def test_unknown_excluded_from_both_sides(self):
+    def test_unknown_stays_separately_countable(self):
+        """unknown 不得折叠进 absent——折叠就是假装知道。"""
         self.assertEqual(signals.unknown_signals(self.sig), ["tables"])
-        self.assertEqual(signals.utilization(self.sig, {"text_layer", "tables"}), 0.5)
 
-    def test_absent_never_counts(self):
-        # 提取了一个 absent 信号也不会让利用率超过 1
-        self.assertEqual(signals.utilization(self.sig, {"text_layer", "page_images", "bookmarks"}), 1.0)
+    def test_absent_appears_in_neither_list(self):
+        self.assertNotIn("bookmarks", signals.present_signals(self.sig))
+        self.assertNotIn("bookmarks", signals.unknown_signals(self.sig))
 
-    def test_empty_denominator_is_none_not_zero(self):
-        """「没有可提取的信号」与「一个都没提出来」不是一回事。"""
-        self.assertIsNone(signals.utilization({"tables": signals.UNKNOWN}, set()))
-        self.assertEqual(signals.utilization(self.sig, set()), 0.0)
+    def test_module_exposes_no_ratio(self):
+        """spec 11 §七判据「不出现比值」。
 
-    def test_gaps_are_present_but_unextracted(self):
-        self.assertEqual(signals.gaps(self.sig, {"text_layer"}), ["page_images"])
-        self.assertEqual(signals.gaps(self.sig, None), ["text_layer", "page_images"])
+        比值的分子是「已成功提取的信号数」，它需要 ground truth；而 ADG 若掌握
+        ground truth 就不必调用这些工具——原理上不可知（ADR 0004）。
+        想把它加回来的人，得先修订那份 ADR。
+        """
+        for banned in ("utilization", "gaps", "denominator", "coverage_ratio"):
+            self.assertFalse(hasattr(signals, banned), f"signals.{banned} 已由 ADR 0004 撤销")
 
 
 class TestPdfProbe(unittest.TestCase):
@@ -90,7 +93,7 @@ class TestPdfProbe(unittest.TestCase):
     def test_encrypted_pdf_admits_it_knows_nothing(self):
         got = self._probe(make_pdf_encrypted())
         self.assertTrue(all(state == signals.UNKNOWN for state in got.values()), got)
-        self.assertEqual(signals.denominator(got), [])
+        self.assertEqual(signals.present_signals(got), [])
 
     def test_tables_are_never_claimed(self):
         """PDF 没有表格的结构标记，粗检无从判定，任何样本都不得判 present/absent。"""
@@ -108,8 +111,8 @@ class TestPdfProbe(unittest.TestCase):
 
         with_objstm = self._probe(make_pdf_digital() + b"\n/ObjStm\n")
         self.assertEqual(with_objstm["bookmarks"], signals.UNKNOWN)
-        # 分母只会缩小或持平，绝不会因为不确定而变大
-        self.assertLessEqual(len(signals.denominator(with_objstm)), len(signals.denominator(plain)))
+        # present 清单只会缩小或持平，绝不会因为不确定而变长
+        self.assertLessEqual(len(signals.present_signals(with_objstm)), len(signals.present_signals(plain)))
 
 
 if __name__ == "__main__":
