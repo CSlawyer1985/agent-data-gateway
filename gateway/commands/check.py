@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 
-from ..hardware import check_requirements
 from ._common import build_registry, get_env, print_json, summary_line
 
 
@@ -20,21 +19,21 @@ def run(args) -> int:
     workers_report = []
     available = 0
     for w in sorted(registry.workers.values(), key=lambda x: x.name):
-        ok, reason = registry.availability(w, env)
-        req_ok, req_problems = check_requirements(w.requirements, env)
+        status = registry.availability_status(w, env)
         workers_report.append(
             {
                 "name": w.name,
                 "version": w.version,
                 "backend": w.backend,
                 "kinds": w.kinds,
-                "available": ok and req_ok,
-                "detail": reason if ok else reason,
-                "requirement_problems": req_problems,
+                "available": status.available,
+                "availability_reason": status.reason,
+                "detail": status.detail,
+                "requirement_problems": list(status.requirement_problems),
                 "maturity": w.maturity,
             }
         )
-        if ok and req_ok:
+        if status.available:
             available += 1
     report = {
         "environment": env.to_dict(),

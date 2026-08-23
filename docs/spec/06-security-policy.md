@@ -37,7 +37,7 @@ archive:
 ## worker 沙箱（默认值）
 
 - docker：read_only root、原件只读挂载、network=none、memory 8GB、cpus 4、pids 256、tmpfs work_dir、drop ALL caps、no-new-privileges、--rm。
-- subprocess（降级）：timeout 1800s、stdout/stderr 上限 64MB、独立 work_dir、退出清理、环境变量白名单。
+- subprocess（受信任代码兼容形态）：timeout 1800s、stdout/stderr 上限 64MB、独立 work_dir、退出清理、环境变量白名单。它不提供文件系统/网络安全边界；`network=true` worker 会被拒绝，恶意或未知 worker 必须改走容器。
 
 ## 解析器结构上限（默认值）
 

@@ -49,6 +49,10 @@ class QualityAggregationTest(unittest.TestCase):
         fail = [{"overall": "fail", "fitness": {"fact_extraction": True}}]
         self.assertFalse(quality.reliably_read(fail))
 
+    def test_empty_content_cannot_claim_fact_extraction(self):
+        fit = quality.default_fitness("text", {"text_extraction": "pass"}, text_chars=0)
+        self.assertFalse(fit["fact_extraction"])
+
     def test_archive_reliably_read_by_status(self):
         self.assertTrue(quality.reliably_read_item("archive", "parsed", []))
         self.assertTrue(quality.reliably_read_item("archive", "parsed_with_warnings", []))

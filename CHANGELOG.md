@@ -5,6 +5,25 @@
 
 ## Unreleased
 
+### v0.2.2：文档 VLM 与承重契约修复
+
+- 新增 PaddleOCR-VL-1.6、OvisOCR2 Worker；真实模型 fixture 尚未验收，成熟度保持
+  `protocol-smoke`，默认 balanced 主链继续使用已验证工具，quality/显式 `--chain` 才执行新模型。
+- rendition 在任何持久化之前执行完整 EvidenceDocument Schema、哈希与身份校验；无效 worker
+  结果按 `rejected_by_preflight` 继续降级，不再留下损坏孤儿文件。
+- 链内 `status=ok` 不再等于内容可用：未达到 `reliably_read` 下限时记录 `low_quality` 并继续；
+  整链均低质量时仍保留末级降级证据，但不会计为可靠读取。
+- Worker 可用性统一合并运行时存在性与硬件要求，Dispatcher、check、doctor/setup 共用同一结论；
+  `hardware_unmet` 进入真实失败记录。
+- subprocess 明确限定为受信任代码的弱隔离，并在代码层拒绝 `network=true` worker；未知或恶意
+  worker 必须使用提供网络/文件系统强制策略的容器。
+- lineage 可记录实际顶层依赖版本；文档 VLM 记录模型 revision 与推理配置哈希，Ovis 达到生成
+  token 上限时显式标记截断并触发降级。
+- 发布版本升至 0.2.2；setuptools 排除陈旧 build/dist 包树，CI 从干净源码构建 wheel 并校验
+  新增/已删除 Worker 的实际包内容。
+- 验证：源码 229 项测试通过；`adg verify` 27/28、0 失败、1 项按环境跳过；临时干净源码构建的
+  0.2.2 wheel 可独立安装，发现 PaddleOCR-VL/OvisOCR2，且不含 GLM-OCR/HPD 残留。
+
 ### 安装简化：`adg setup --auto` 与自动线路优化
 
 面向不熟悉命令行的目标用户（律师、文字工作者），把安装从"先搞懂 --lite/--all 的区别、
@@ -26,8 +45,8 @@
   这些 worker 声明 `network: false`，但模型是首次运行才下载的——**不预热的话，第一次解析音视频
   会在一个声称不联网的 worker 里静默等待下载**。预热把下载提到安装阶段，让那句声明成真。
   下载经自动选出的 `HF_ENDPOINT` 走镜像；线路全不通时直接给出 ModelScope 手动路径而不是干等。
-- 安全边界未放宽：模型下载在**安装阶段**完成，因此 worker 运行时的 `env_passthrough`
-  白名单（PATH/HOME/LANG/LC_ALL/TZ）保持不变——基线只收不放。
+- 模型下载在**安装阶段**完成，减少解析阶段的意外联网；`env_passthrough` 白名单保持不变。
+  这不把 subprocess 冒充为网络沙箱——需要强制断网时仍必须使用容器后端。
 - 新增 `tests/test_mirrors.py`（12 项，全部 mock 探测，测试套件不联网）。
 
 **未解决的门槛（已写入 README）**：仍需本机有 Python 3.10+ 且会开终端。

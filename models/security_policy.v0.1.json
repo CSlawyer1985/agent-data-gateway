@@ -15,8 +15,8 @@
     "comment": "max_total_uncompressed_bytes = 50GB；压缩比按成员逐一检查并对超大成员单独限制"
   },
   "worker_sandbox": {
-    "default_backend": "docker",
-    "fallback_backend": "subprocess",
+    "default_backend": "worker_manifest",
+    "fallback_backend": "none",
     "docker": {
       "read_only_root": true,
       "mount_source_read_only": true,
@@ -35,7 +35,7 @@
       "isolated_work_dir": true,
       "cleanup_on_exit": true,
       "env_passthrough": ["PATH", "HOME", "LANG", "LC_ALL", "TZ"],
-      "comment": "subprocess 是兼容降级形态，隔离强度低于容器；worker.json 声明 network=true 的 worker 禁止在 subprocess 下运行"
+      "comment": "subprocess 仅用于受信任代码：隔离依赖、崩溃、超时与输出，不限制当前用户的文件系统/网络权限；network=true worker 禁止在 subprocess 下运行"
     }
   },
   "parser_limits": {

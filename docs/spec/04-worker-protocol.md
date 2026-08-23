@@ -40,8 +40,8 @@ worker → 编排器:  {"type":"parse_result","job_id":"...","status":"ok",
 
 | backend | 隔离 | 说明 |
 |---------|------|------|
-| docker/podman | 强 | 默认。只读挂载原件、network=none、限 CPU/内存/PID、tmpfs work_dir、drop ALL capabilities |
-| subprocess | 弱 | 兼容降级。独立 work_dir、超时、输出上限、环境变量白名单、退出清理。network=true 的 worker 禁止此后端 |
+| docker/podman | 强 | 清单选择容器时：只读挂载原件、network=none、限 CPU/内存/PID、tmpfs work_dir、drop ALL capabilities |
+| subprocess | 弱 | 受信任代码兼容形态。独立 work_dir、超时、输出上限、环境变量白名单、退出清理；不能阻止进程读取/写入当前用户可访问的其他路径，也不能执行 `network=none` |
 | inproc（lite parser） | 无 | 仅限主仓库内纯 stdlib 代码路径，不加载第三方 native 代码 |
 
 ## 纪律
@@ -50,6 +50,9 @@ worker → 编排器:  {"type":"parse_result","job_id":"...","status":"ok",
 2. worker 不得写 work_dir 之外的位置。
 3. worker 输出不可信：编排器必须校验片段结构、重算锚点 ID、定稿质量后才落盘。
 4. GPL 组件（extract-msg、LibreDWG 等）必须隔离为独立进程，不得以库形式链入编排器。
+
+前两条是 worker 行为纪律；只有容器后端提供操作系统级强制。编排器拒绝 `network=true + subprocess`
+组合，但 `network=false` 的 subprocess 仍只允许仓库内或用户明确信任的代码，不能用于对抗恶意 worker。
 
 ## 编排器录取规则
 

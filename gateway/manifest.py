@@ -253,7 +253,7 @@ def load_rendition(out_dir: Path, source_id: str, rendition_id: str) -> dict | N
     if not path.exists():
         return None
     doc = _read_json(path)
-    _validate_rendition_doc(doc, path, expected_source_id=source_id, expected_rendition_id=rendition_id)
+    validate_rendition_doc(doc, path, expected_source_id=source_id, expected_rendition_id=rendition_id)
     return doc
 
 
@@ -265,18 +265,19 @@ def list_rendition_docs(out_dir: Path, source_id: str) -> list[dict]:
             if p.name.startswith("alignment-"):
                 continue
             doc = _read_json(p)
-            _validate_rendition_doc(doc, p, expected_source_id=source_id)
+            validate_rendition_doc(doc, p, expected_source_id=source_id)
             docs.append(doc)
     return docs
 
 
-def _validate_rendition_doc(
+def validate_rendition_doc(
     doc: dict,
     path: Path,
     *,
     expected_source_id: str | None = None,
     expected_rendition_id: str | None = None,
 ) -> None:
+    """在候选 rendition 可见前验证完整 Schema、哈希与身份；path 仅用于错误定位。"""
     validate_model(doc, "evidence_document.v0.2.json")
     _verify_payload_hash(doc, path)
     source_id = doc["source_id"]

@@ -16,6 +16,18 @@ from gateway.workers import WorkerRegistry
 from gateway.workers import WorkerInfo
 
 
+def _text_fragment(text: str, *, locator_system: str = "paragraph") -> dict:
+    from gateway import quality
+
+    element = {"type": "paragraph", "text": text, "locator": {"system": locator_system, "index": 0}}
+    return {
+        "parser_name": "fixture",
+        "parser_version": "1",
+        "content": {"blocks": [{"block_type": "section", "index": 0, "elements": [element] if text else []}]},
+        "quality_dims": {name: "pass" for name in quality.DIMENSIONS},
+    }
+
+
 class EndToEndTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -249,6 +261,81 @@ class QualityRefreshRegressionTest(unittest.TestCase):
             self.assertNotEqual(second_doc["run_id"], first_doc["run_id"])
             self.assertEqual(second_doc["quality"]["overall"], "pass")
             self.assertEqual(len(second_doc["lineage"]), 2)
+
+
+class AdmissionBoundaryTest(unittest.TestCase):
+    def _run_chain(self, parsers: list[tuple[str, object]]):
+        import tempfile
+
+        with tempfile.TemporaryDirectory(prefix="adg-admission-") as d:
+            root = Path(d)
+            package = root / "package"
+            package.mkdir()
+            (package / "a.txt").write_text("source", encoding="utf-8")
+            out = root / "output"
+            manifest = build_manifest(discover_package(package, out))
+            recompute_package_quality(manifest, reliably_read_ids=set())
+            save_manifest(manifest, out)
+
+            registry = WorkerRegistry()
+            for name, parser in parsers:
+                registry.register_lite(WorkerInfo(
+                    name=name, version="1", role="parse", kinds=["text"], formats=None,
+                    requirements={}, backend="inproc", parse_fn=parser,
+                ))
+            options = ParseOptions(
+                force=True,
+                no_abs_log=True,
+                chain_override={"text": [name for name, _parser in parsers]},
+            )
+            Dispatcher(package, out, load_manifest(out), registry, env=detect_environment(), options=options).run()
+            item = load_manifest(out).items[0]
+            return item, list_rendition_docs(out, item.source_id)
+
+    def test_invalid_document_is_rejected_before_persistence(self):
+        def invalid(_path, **_kwargs):
+            return _text_fragment("invalid", locator_system="not-a-schema-locator")
+
+        def valid(_path, **_kwargs):
+            fragment = _text_fragment("valid")
+            fragment["parser_name"] = "valid"
+            return fragment
+
+        item, docs = self._run_chain([("invalid", invalid), ("valid", valid)])
+        self.assertEqual(["valid"], [doc["parser"]["name"] for doc in docs])
+        self.assertEqual(1, len(item.renditions), "未通过完整 Schema 的 rendition 不得留下孤儿文件")
+        self.assertEqual("rejected_by_preflight", item.chain_executions[0]["fell_back"][0]["reason"])
+
+    def test_low_quality_result_continues_to_next_worker(self):
+        calls: list[str] = []
+
+        def empty(_path, **_kwargs):
+            calls.append("empty")
+            fragment = _text_fragment("")
+            fragment["parser_name"] = "empty"
+            return fragment
+
+        def useful(_path, **_kwargs):
+            calls.append("useful")
+            fragment = _text_fragment("useful")
+            fragment["parser_name"] = "useful"
+            return fragment
+
+        item, docs = self._run_chain([("empty", empty), ("useful", useful)])
+        self.assertEqual(["empty", "useful"], calls)
+        self.assertEqual(["useful"], [doc["parser"]["name"] for doc in docs])
+        self.assertEqual("low_quality", item.chain_executions[0]["fell_back"][0]["reason"])
+
+    def test_last_low_quality_result_is_kept_as_explicit_evidence(self):
+        def empty(_path, **_kwargs):
+            fragment = _text_fragment("")
+            fragment["parser_name"] = "empty-last-resort"
+            return fragment
+
+        item, docs = self._run_chain([("empty-last-resort", empty)])
+        self.assertEqual(["empty-last-resort"], [doc["parser"]["name"] for doc in docs])
+        self.assertFalse(docs[0]["quality"]["fitness"]["fact_extraction"])
+        self.assertEqual("ok", item.chain_executions[0]["status"])
 
 
 if __name__ == "__main__":

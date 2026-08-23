@@ -18,12 +18,13 @@ def make_entry(
     tool_version: str,
     model_version: str | None = None,
     config_hash: str | None = None,
+    runtime_versions: dict[str, str] | None = None,
     started_at: str,
     finished_at: str,
     exit_code: int = 0,
     warnings: list[str] | None = None,
 ) -> dict:
-    return {
+    entry = {
         "operation": operation,
         "input_sha256": input_sha256,
         "output_sha256": output_sha256,
@@ -36,3 +37,6 @@ def make_entry(
         "exit_code": exit_code,
         "warnings": list(warnings or []),
     }
+    if runtime_versions:
+        entry["runtime_versions"] = dict(sorted(runtime_versions.items()))
+    return entry

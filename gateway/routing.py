@@ -91,16 +91,18 @@ ROUTE_RULES: tuple[RouteRule, ...] = (
     RouteRule(
         "pdf-scanned",
         "pdf",
-        "PDF 扫描/无文字层 → MinerU；无容器/无 GPU 时用 pdf_render 渲染页面位图，回灌 image 链做 OCR",
+        "PDF 扫描/无文字层 → 已验证链优先；quality 档额外执行文档 VLM 视角",
         ("mineru", "pdf_render"),
         features=(("pdf_class", "scanned"),),
+        parallel_with=(ParallelChain("pdf-document-vlm"),),
     ),
     RouteRule(
         "pdf-mixed-complex",
         "pdf",
-        "PDF 混合/复杂版面 → MinerU 优先",
+        "PDF 混合/复杂版面 → 已验证版面与文字层工具优先；quality 档额外执行文档 VLM 视角",
         ("mineru", "docling", "pdfplumber", "pypdf", "pdf_lite"),
         features=(("pdf_class", "mixed_complex"),),
+        parallel_with=(ParallelChain("pdf-document-vlm"),),
     ),
     RouteRule(
         "pdf-digital-simple",
@@ -117,6 +119,13 @@ ROUTE_RULES: tuple[RouteRule, ...] = (
         "pdf",
         "视觉视角：渲染页位图回灌 image 链做 OCR，读文字层看不到的印章与手写",
         ("pdf_render",),
+    ),
+    # PaddleOCR-VL 尚处 protocol-smoke，只在 quality 或显式 --chain 下执行，不进入 balanced 主链。
+    RouteRule(
+        "pdf-document-vlm",
+        "pdf",
+        "端到端文档视觉视角：PaddleOCR-VL 直接读取 PDF，独立产出逐页 Markdown",
+        ("paddleocr_vl",),
     ),
     RouteRule("email-eml", "email", "RFC 822/MIME 结构可直接解析正文与附件", ("eml_lite",), formats=("eml",)),
     RouteRule("email-msg", "email", "MSG 是 OLE Outlook 容器，需要专用属性流解析", ("extract_msg",), formats=("msg",)),
@@ -144,7 +153,20 @@ ROUTE_RULES: tuple[RouteRule, ...] = (
     RouteRule("csv-default", "csv", "分隔文本可确定性解析并保留行列结构", ("csv_lite",)),
     RouteRule("text-default", "text", "纯文本、Markdown、JSON、XML 可直接解码为可检索文本", ("text_lite",)),
     RouteRule("html-default", "html", "先提取网页正文，失败时由内置 HTML 解析器兜底", ("trafilatura", "html_lite")),
-    RouteRule("image-default", "image", "图片需要 OCR 才能获得正文；无 OCR 时只保留诚实的元数据兜底", ("paddleocr", "rapidocr", "image_lite")),
+    RouteRule(
+        "image-default",
+        "image",
+        "图片默认走确定性 OCR；quality 档并跑端到端文档视觉模型",
+        ("paddleocr", "rapidocr", "image_lite"),
+        parallel_with=(ParallelChain("image-document-vlm"),),
+    ),
+    # 只作 image-default 的 quality 并跑目标；也可用 --chain image=<worker> 精确选择。
+    RouteRule(
+        "image-document-vlm",
+        "image",
+        "文档页图视觉解析：PaddleOCR-VL、OvisOCR2 依次降级",
+        ("paddleocr_vl", "ovisocr2"),
+    ),
     RouteRule("chat-default", "chat", "聊天导出先按消息边界、参与者和时间结构解析", ("chat_lite",)),
     RouteRule("audio-default", "audio", "音频先用 Whisper 生成带时间码的转录，失败时仅保留媒体元数据", ("whisper", "av_lite")),
     RouteRule("video-default", "video", "视频先抽帧并尝试语音转录，最后仅保留媒体元数据", ("video_frames", "whisper", "av_lite")),

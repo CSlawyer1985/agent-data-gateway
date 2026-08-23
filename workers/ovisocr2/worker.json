@@ -1,0 +1,28 @@
+{
+  "name": "ovisocr2",
+  "version": "0.1.0",
+  "handles": [{"kind": "image", "role": "parse"}],
+  "requirements": {
+    "min_ram_mb": 8192,
+    "gpu": "optional",
+    "backend": ["subprocess"],
+    "network": false
+  },
+  "subprocess": {
+    "adapter": "adapter.py",
+    "venv": ".venv",
+    "probe_import": "transformers"
+  },
+  "python_requires": ["transformers", "torch", "accelerate", "pillow", "huggingface_hub"],
+  "weight": "heavy",
+  "maturity": "protocol-smoke",
+  "license": "Apache-2.0",
+  "notes": "OvisOCR2 0.9B 页级端到端文档解析。当前完成协议与结构 smoke，尚未在仓库 fixture 上完成真实模型验收；接收单页图片，运行时只读本地模型缓存。",
+  "auto_install": false,
+  "auto_install_reason": "约 0.9B 参数且依赖 PyTorch，按需安装",
+  "prefetch": {
+    "python": "from huggingface_hub import snapshot_download; snapshot_download('ATH-MaaS/OvisOCR2')",
+    "approx_size": "约 2GB",
+    "note": "OvisOCR2 0.9B 权重与处理器。"
+  }
+}

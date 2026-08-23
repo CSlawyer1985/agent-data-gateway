@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from . import magic, routing
-from .hardware import Environment, check_requirements
+from .hardware import Environment
 from .models import PackageManifest
 from .workers import WorkerRegistry
 
@@ -76,9 +76,8 @@ def analyze_manifest_gaps(
             if w is None:
                 gap.missing.append(wname)
                 continue
-            ok, reason = registry.availability(w, env)
-            req_ok, _ = check_requirements(w.requirements, env)
-            if ok and req_ok:
+            availability = registry.availability_status(w, env)
+            if availability.available:
                 gap.available.append(wname)
             else:
                 gap.missing.append(wname)

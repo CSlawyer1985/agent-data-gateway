@@ -270,7 +270,7 @@ class Dispatcher:
         return w is not None and (w.weight == "heavy" or w.backend == "docker")
 
     def _run_chain(self, item: Item, path: Path, planned: routing.PlannedChain, features: dict) -> dict:
-        """跑一条链：链内先成功先得（spec 08 降级纪律不变）。
+        """跑一条链：先取得达到可靠读取下限的结果；低质量结果只作末级证据兜底。
 
         只返回本条链的结果，不改 item 状态——多条链的汇总定稿在 _parse_item。
         链内回退记 fell_back；链**之间**的成败是另一回事，由调用方记进执行记录。
@@ -278,15 +278,21 @@ class Dispatcher:
         fell_back: list[dict] = []
         produced_items: list[Item] = []
         transform_done = False
+        deferred: tuple[EvidenceDocument, dict, Path, WorkerInfo, int] | None = None
         for worker_name in planned.workers:
             w = self.registry.get(worker_name)
             if w is None:
                 detail = f"worker {worker_name} 未注册"
                 fell_back.append({"name": worker_name, "version": "-", "reason": "unavailable", "detail": detail})
                 continue
-            ok, reason = self.registry.availability(w, self.env)
-            if not ok:
-                fell_back.append({"name": w.name, "version": w.version, "reason": "unavailable", "detail": reason})
+            availability = self.registry.availability_status(w, self.env)
+            if not availability.available:
+                fell_back.append({
+                    "name": w.name,
+                    "version": w.version,
+                    "reason": availability.reason,
+                    "detail": availability.detail,
+                })
                 continue
             request = {
                 "protocol_version": "0.1",
@@ -347,16 +353,69 @@ class Dispatcher:
                 continue
             try:
                 doc = self._finalize_document(item, w, fragment, fell_back, features, planned.reason, started)
+                candidate = doc.to_dict()
+                rpath = manifest_mod.rendition_json_path(self.out_dir, item.source_id, doc.rendition_id)
+                manifest_mod.validate_rendition_doc(
+                    candidate,
+                    rpath,
+                    expected_source_id=item.source_id,
+                    expected_rendition_id=doc.rendition_id,
+                )
             except Exception as e:
-                detail = f"片段定稿失败: {type(e).__name__}: {e}"
+                detail = f"片段未通过完整录取: {type(e).__name__}: {e}"
+                fell_back.append({
+                    "name": w.name,
+                    "version": w.version,
+                    "reason": "rejected_by_preflight",
+                    "detail": detail,
+                })
+                self._cleanup_work(work_dir)
+                continue
+
+            if not quality_mod.reliably_read([doc.quality]):
+                detail = (
+                    "结果未达到可靠读取下限: "
+                    f"overall={doc.quality.get('overall')}, "
+                    f"fact_extraction={doc.quality.get('fitness', {}).get('fact_extraction')}"
+                )
+                if deferred is not None:
+                    self._cleanup_work(deferred[2])
+                selected_fallback_index = len(fell_back)
+                deferred = (doc, fragment, work_dir, w, selected_fallback_index)
+                fell_back.append({"name": w.name, "version": w.version, "reason": "low_quality", "detail": detail})
+                continue
+
+            if deferred is not None:
+                self._cleanup_work(deferred[2])
+                deferred = None
+            try:
+                produced = self._after_success(item, doc, fragment, work_dir, w)
+            except Exception as e:
+                detail = f"rendition 提交失败: {type(e).__name__}: {e}"
                 fell_back.append({"name": w.name, "version": w.version, "reason": "error", "detail": detail})
                 self._cleanup_work(work_dir)
                 continue
-            produced = self._after_success(item, doc, fragment, work_dir, w)
             produced_items.extend(produced)
             self._cleanup_work(work_dir)
-            self._cleanup_work(work_dir)
             return {"status": "ok", "produced": produced_items, "fell_back": fell_back, "worker": w.name}
+
+        if deferred is not None:
+            doc, fragment, work_dir, w, selected_fallback_index = deferred
+            try:
+                produced_items.extend(self._after_success(item, doc, fragment, work_dir, w))
+            except Exception as e:
+                detail = f"末级低质量 rendition 提交失败: {type(e).__name__}: {e}"
+                fell_back.append({"name": w.name, "version": w.version, "reason": "error", "detail": detail})
+                self._cleanup_work(work_dir)
+            else:
+                self._cleanup_work(work_dir)
+                reported_fallbacks = [fb for index, fb in enumerate(fell_back) if index != selected_fallback_index]
+                return {
+                    "status": "ok",
+                    "produced": produced_items,
+                    "fell_back": reported_fallbacks,
+                    "worker": w.name,
+                }
         if transform_done:
             return {"status": "transform", "produced": produced_items, "fell_back": fell_back, "worker": None}
         return {"status": "failed", "produced": produced_items, "fell_back": fell_back, "worker": None}
@@ -493,6 +552,7 @@ class Dispatcher:
                 tool_version=parser_version,
                 model_version=fragment.get("model_version"),
                 config_hash=config_hash,
+                runtime_versions=w.runtime_versions,
                 started_at=started,
                 finished_at=finished,
                 exit_code=0,
@@ -507,15 +567,28 @@ class Dispatcher:
         # rendition_id 只覆盖 content/annotations/coordinate_system，因此刷新前先加载并验证旧事实，
         # 再保留历史 lineage；内容身份仍由 load_rendition 和写后读取校验守住。
         rpath = manifest_mod.rendition_json_path(self.out_dir, item.source_id, doc.rendition_id)
+        manifest_mod.validate_rendition_doc(
+            doc_dict,
+            rpath,
+            expected_source_id=item.source_id,
+            expected_rendition_id=doc.rendition_id,
+        )
         existing = manifest_mod.load_rendition(self.out_dir, item.source_id, doc.rendition_id) if rpath.exists() else None
         if existing is None or self.options.force:
             if existing is not None:
                 doc_dict["lineage"] = list(existing.get("lineage") or []) + list(doc_dict.get("lineage") or [])
                 doc_dict["integrity"]["payload_sha256"] = payload_hash_of(doc_dict)
+                manifest_mod.validate_rendition_doc(
+                    doc_dict,
+                    rpath,
+                    expected_source_id=item.source_id,
+                    expected_rendition_id=doc.rendition_id,
+                )
+            rendered = render_document_md(doc_dict)
             manifest_mod.atomic_write_json(rpath, doc_dict)
             manifest_mod.atomic_write_text(
                 manifest_mod.rendition_md_path(self.out_dir, item.source_id, doc.rendition_id),
-                render_document_md(doc_dict),
+                rendered,
             )
         if doc.rendition_id not in item.renditions:
             item.renditions.append(doc.rendition_id)

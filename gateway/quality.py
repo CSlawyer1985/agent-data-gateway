@@ -99,14 +99,14 @@ def default_fitness(
     """fitness 默认推导：parser 可覆盖，但推导保证下限诚实。
 
     - fulltext_search：有可用文本且 text_extraction 非 fail
-    - fact_extraction：text_extraction=pass 且未截断（截断后事实可能缺半）
+    - fact_extraction：存在文本、text_extraction=pass 且未截断（截断后事实可能缺半）
     - quotation：source_anchoring=pass 且无锚点问题
     - layout_sensitive_analysis：layout_preservation=pass
     - authenticity_assessment：恒 false
     """
     fit = {
         "fulltext_search": text_chars > 0 and dims.get("text_extraction") in ("pass", "warning"),
-        "fact_extraction": dims.get("text_extraction") == "pass" and not truncated,
+        "fact_extraction": text_chars > 0 and dims.get("text_extraction") == "pass" and not truncated,
         "quotation": dims.get("source_anchoring") == "pass" and anchor_problems == 0,
         "layout_sensitive_analysis": dims.get("layout_preservation") == "pass",
         "authenticity_assessment": False,

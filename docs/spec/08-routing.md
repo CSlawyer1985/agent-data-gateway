@@ -32,8 +32,8 @@ adg check                          # 另查这些 worker 在当前机器是否�
 PDF 预检（加密检测、文字层采样、版面复杂度、扫描比例）
 ├── 加密                    → [pypdf, pdfplumber] 先试空用户口令/给定口令 → qpdf（需密码）→ 否则 unresolved(encrypted)
 ├── 结构不完整              → [pypdf, pdf_lite]
-├── 扫描/无文字层           → [mineru, pdf_render]（无容器/无 GPU 时渲染页位图，回灌 image 链 OCR）
-├── 混合或复杂版面          → [mineru, docling, pdfplumber, pypdf, pdf_lite]
+├── 扫描/无文字层           → [mineru, pdf_render]；quality 另跑 [paddleocr_vl]
+├── 混合或复杂版面          → [mineru, docling, pdfplumber, pypdf, pdf_lite]；quality 另跑 [paddleocr_vl]
 └── 数字简单                → [docling, pdfplumber, pypdf, pdf_lite]
 ```
 
@@ -58,6 +58,10 @@ PDF 预检（加密检测、文字层采样、版面复杂度、扫描比例）
 2. 每次回退记录：`parser.fell_back_from[] = {name, version, reason}`，reason ∈ unavailable / hardware_unmet / timeout / error / rejected_by_preflight / low_quality。
 3. 全部失败 → item unresolved，原因 + 建议动作写入 manifest，**不假装成功**。
 4. lite parser 产物必须带降级质量标注（如 pdflite：layout_preservation=fail、quotation=false）。
+
+`status=ok` 只代表协议完成，不代表内容可用。编排器先执行完整 EvidenceDocument 录取；未达到
+`reliably_read` 下限的结果记录 `low_quality` 并继续链内尝试。整链都未过下限时，最后一个
+低质量结果可作为显式降级证据保留，但不计入可靠读取。
 
 ## transform 链
 

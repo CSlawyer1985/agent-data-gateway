@@ -29,7 +29,7 @@
   "weight": "heavy",
   "maturity": "implemented",
   "license": "AGPL-3.0（隔离进程使用）",
-  "notes": "扫描/复杂版面 PDF 首选（多栏/表格/公式/中英混排/印章生态）。安装重：pip install 'mineru[core]' 后需 mineru-models-download 下载模型。适配器调 MinerU CLI 产物的 content_list.json。未经本机实测。",
+  "notes": "扫描/复杂版面 PDF 解析（多栏/表格/公式/中英混排/印章生态），兼容当前 MinerU CLI 与 MinerU2.5-Pro 模型配置。安装重：pip install 'mineru[core]' 后需 mineru-models-download 下载模型。适配器读取 content_list.json。未经本机模型实测。",
   "auto_install": false,
   "auto_install_reason": "需要 Docker 镜像且模型数 GB"
 }

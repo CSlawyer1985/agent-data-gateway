@@ -44,7 +44,7 @@
 | **版本** | v0.2.0（2026-08-23）；v0.1.0 于 2026-08-05 首次发布 |
 | **编排器核心** | ✅ 完整可用：发现/安全展开/类型识别/特征路由/调度/质量/锚点/谱系/渲染，纯 stdlib |
 | **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
-| **外部 worker** | ✅ 22 个适配器随 wheel 发布（含 anydoc / pdf_render / dwgread），按环境安装；可用性以本机 `adg check` 为准 |
+| **外部 worker** | ✅ 24 个适配器随 wheel 发布（含文档 VLM / anydoc / pdf_render / dwgread），按环境安装；可用性以本机 `adg check` 为准 |
 | **Agent 接口** | ✅ 元素级检索索引 + `adg index/search/anchor/get`：命中带来源锚点与可引用标注，纯 stdlib |
 | **验证矩阵** | ✅ `adg verify` 27/28 通过、0 失败（1 跳过为环境依赖项）；跨 parser 对齐（L3）已用真实材料验证 |
 | **真实数据验证** | ✅ input 混合材料包（23 物理文件 → 展开/派生后 41 items）：全量入账、覆盖率 **97.6%**、仅剩 1 项未解决（CAJ 属知网专有格式，无开源解析器），带原因与可执行建议 |
@@ -120,9 +120,9 @@ adg check                        # 验证这些 worker 在当前机器是否真�
 
 律师材料的默认边界：**客户秘密与执业秘密在本地闭环内处理**。
 
-- **worker 隔离**：重/异构解析走独立 venv 或 docker 容器（只读挂载原件、`network=none`、资源限额），不链入编排器；GPL 组件（extract-msg、LibreDWG、MinerU）以独立进程调用，规避许可证传染。
+- **worker 隔离**：Docker/Podman 才提供只读挂载、`network=none` 与资源限额；subprocess/独立 venv 只隔离依赖、崩溃和超时，仍继承当前用户的文件与网络权限，因此只运行受信任的适配器和依赖。
 - **隐私三规则**（spec 09）：产物只出现包内相对路径；绝对路径只进本地私有日志（可 `--no-abs-log` 关闭）；输出前兜底 scrub。
-- **无暗网行为**：worker 默认 `network=false` 禁止外联；需要网络的 enrich 类 worker 必须显式声明并说明用途。
+- **网络边界**：需要网络的 worker 禁止使用 subprocess，必须进入能执行网络策略的容器并显式说明用途；`network=false` 对 subprocess 是受信任代码纪律，不冒充操作系统防火墙。
 - **本地能力自查**：`adg check` 一键列出本机 25+ worker 可用性，`adg doctor` 按实际材料诊断缺口，`adg setup` 一键补装。
 
 ## 云端扩展：本地无路径时
@@ -165,7 +165,7 @@ adg check
 
 1. **自动选线路**——并发测速 pypi 官方 / 清华 / 阿里 / 腾讯 / 中科大，选最快的那个（结果缓存 7 天）。
    直连官方就用官方，不硬塞镜像。显式 `--index-url` 或环境变量 `ADG_PIP_INDEX_URL` 永远优先。
-2. **只装该装的**——收无系统依赖、体积可接受的 worker；需要 Docker 或数 GB 模型的（docling/mineru/paddleocr/whisper）
+2. **只装该装的**——收无系统依赖、体积可接受的 worker；需要 Docker 或数 GB 模型的（文档 VLM、docling/mineru/paddleocr/whisper 等）
    不进一键档，装完会告诉你它们各自的一行安装命令。准入写在各 `worker.json` 的 `auto_install`，不是代码里的硬编码名单。
 
 ### 模型会自动安装吗？
@@ -175,14 +175,36 @@ adg check
 - `uv tool install` / `pip install` 只安装 ADG Core，不下载模型。
 - `adg setup --auto` 安装轻量自动档 worker；其中 RapidOCR 的模型随依赖包一起安装，无需首次运行再联网下载。
 - Whisper、PaddleOCR、Docling、MinerU 等重型 worker 默认不进自动档，需要时再按提示显式安装。
-- 对声明了模型预取步骤的 worker（目前包括 Whisper、PaddleOCR），执行 `adg setup --worker <名称>`，并备齐 FFmpeg 等系统依赖后，
-  ADG 会自动预取模型；加 `--no-models` 可以跳过。若预取失败，ADG 会明确警告，并在首次解析时重试。
+- 对声明了模型预取步骤的 worker（包括 Whisper、PaddleOCR、PaddleOCR-VL、OvisOCR2），执行 `adg setup --worker <名称>`，并备齐 FFmpeg 等系统依赖后，
+  ADG 会自动预取模型；加 `--no-models` 可以跳过。若预取失败，ADG 会明确警告；运行时能否重试下载由对应上游决定，
+  其中 OvisOCR2 明确只读本地缓存，需重新执行 setup 补齐权重。
 
 例如，需要音视频转写时再安装 Whisper：
 
 ```bash
 adg setup --worker whisper
 ```
+
+### 复杂 PDF / 文档页图模型
+
+文章中实际对比的主流方案已接入统一 Worker 协议。它们都不随 Core 安装，按需要选择：
+
+| Worker | 输入 | 安装/启动 | ADG 输出 |
+|---|---|---|---|
+| `paddleocr_vl` | PDF、图片 | `adg setup --worker paddleocr_vl` | 逐页 Markdown，页级锚点 |
+| `ovisocr2` | 单页图片 | `adg setup --worker ovisocr2` | 自然阅读顺序 Markdown；PDF 先由 `pdf_render` 拆页 |
+| `mineru` | PDF | 既有 `mineru` Worker；按其清单准备 CLI/Docker 与模型 | 页面、段落、表格、图片及 bbox |
+
+直接指定某个模型测试：
+
+```bash
+adg parse ./材料 --chain pdf=paddleocr_vl
+adg parse ./材料 --chain image=ovisocr2
+```
+
+两个新 worker 尚处 `protocol-smoke`：`balanced` 不把它们放在已验证工具之前；`quality` 才额外执行
+PaddleOCR-VL/OvisOCR2 独立视角，也可用上面的 `--chain` 显式试跑。这里的“并跑”表示独立产物语义，
+当前调度器按链顺序执行，不承诺墙钟时间并发。
 
 装完会打印一张「本机现在能读什么、还差什么、缺的那个怎么补」的表——**装到什么程度，就诚实报到什么程度**。
 
@@ -247,7 +269,7 @@ agent-data-gateway/
 │   ├── agent_api.py  # 六个只读查询操作的唯一实现（各查询子命令共用）
 │   └── selftest.py   # 验证矩阵（程序化 fixtures，无二进制资产）
 ├── packs/legal/      # Legal Pack：11 个 stdlib lite parser + 预检钩子
-├── workers/          # 22 个外部 worker 适配器（docling/mineru/whisper/anydoc/pdf_render/dwgread/... 各自 venv）
+├── workers/          # 24 个外部 worker 适配器（含文档 VLM、OCR、Office、CAD、音视频等；各自隔离）
 ├── models/           # 冻结 Schema v0.1（EvidenceDocument/Manifest/WorkerProtocol/Quality/Security）
 ├── docs/spec/        # 12 份规格文档（00-11）
 ├── docs/adr/         # 契约权威、写入所有权、分发形态等架构决策记录
@@ -285,6 +307,7 @@ agent-data-gateway/
 
 | 日期 | 版本 | 类型 | 要点 |
 |------|------|------|------|
+| 2026-08-24 | v0.2.2 | PDF/OCR 与契约修复 | 接入 PaddleOCR-VL-1.6、OvisOCR2；真实模型验收前标记 `protocol-smoke`，仅进入 quality/显式链。补完整 Schema 落盘前录取、`low_quality` 降级、统一硬件判定、subprocess 真实安全边界、运行依赖谱系与 wheel 发布门禁。 |
 | 2026-08-05 | v0.1.0 | 初始发布 | 编排器核心 + Legal Pack + 14 worker 适配器 + 10 份 spec + 验证矩阵 |
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |
 | 2026-08-05 | v0.1.0 | 验证 | `adg verify` 17/19 → 20/21（含新增回归用例：单文件包、失败链聚合）；input 混合包未解决项 5→4，PSD 从"类型无法识别"转为"已解析 pass" |

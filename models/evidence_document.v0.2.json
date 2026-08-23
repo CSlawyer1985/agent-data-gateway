@@ -632,6 +632,13 @@
               "null"
             ]
           },
+          "runtime_versions": {
+            "type": "object",
+            "description": "本次执行实际解析到的顶层依赖版本；用于解释浮动依赖导致的结果差异。",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
           "started_at": {
             "type": "string"
           },

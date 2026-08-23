@@ -13,7 +13,7 @@
 | `docker` | `{"image": "adg-worker-<name>:x.y"}`（存在则 backend 默认 docker） |
 | `python_requires` | `adg setup --worker <name>` 装进 `.venv` 的 pip 依赖 |
 | `weight` | `light`（--lite 安装）/ `heavy` |
-| `maturity` | `stable` / `implemented` / `experimental` |
+| `maturity` | `stable` / `implemented` / `protocol-smoke` / `experimental`；真实模型未跑 fixture 时不得写 implemented |
 | `license` | GPL 组件必须隔离为独立进程（spec 04 §纪律 4） |
 
 ## adapter.py 协议（JSON Lines over stdio）
@@ -47,4 +47,5 @@ comments/revisions 上，编排器解析为 `anchor_element_id`。
 ## 沙箱纪律
 
 worker 不得外联网络（声明 network=true 除外并须说明用途）；不得写 work_dir 之外的位置；
-输出不可信，编排器会校验、重算锚点、定稿质量后才落盘。
+输出不可信，编排器会校验、重算锚点、定稿质量后才落盘。Docker 后端强制前两条；subprocess
+无法形成操作系统安全边界，只允许受信任代码，且编排器拒绝 `network=true + subprocess` 组合。

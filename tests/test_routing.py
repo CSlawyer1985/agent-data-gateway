@@ -17,7 +17,7 @@ class RoutingTableTest(unittest.TestCase):
             # 加密：先试能本地解开的（多数只是所有者限制、用户口令为空），qpdf 兜底
             ({"pdf_class": "encrypted", "possibly_corrupt": True}, ["pypdf", "pdfplumber", "qpdf"]),
             ({"possibly_corrupt": True}, ["pypdf", "pdf_lite"]),
-            # 扫描：MinerU 需要 Docker，无容器机器上 pdf_render 渲染位图交给 image 链 OCR
+            # 扫描：未完成真实模型验收的文档 VLM 不进入 balanced 主链
             ({"pdf_class": "scanned"}, ["mineru", "pdf_render"]),
             (
                 {"pdf_class": "mixed_complex"},
@@ -94,6 +94,26 @@ class RoutingTableTest(unittest.TestCase):
             if registry.get(worker) is None or rule.kind not in registry.get(worker).kinds
         ]
         self.assertFalse(mismatches)
+
+    def test_document_vlm_workers_are_routable(self) -> None:
+        registry = build_registry()
+        expected = {"paddleocr_vl", "ovisocr2"}
+        self.assertTrue(expected.issubset(registry.workers))
+        declared = {worker for rule in routing.ROUTE_RULES for worker in rule.workers}
+        self.assertTrue(expected.issubset(declared))
+
+    def test_image_document_vlm_is_quality_parallel_only(self) -> None:
+        balanced, _ = routing.resolve_plan("image", None, {}, profile="balanced")
+        quality, _ = routing.resolve_plan("image", None, {}, profile="quality")
+        self.assertEqual(["image-default"], [chain.rule_id for chain in balanced])
+        self.assertEqual(["image-default", "image-document-vlm"], [chain.rule_id for chain in quality])
+
+    def test_pdf_document_vlm_is_quality_parallel_only(self) -> None:
+        features = {"pdf_class": "scanned"}
+        balanced, _ = routing.resolve_plan("pdf", None, features, profile="balanced")
+        quality, _ = routing.resolve_plan("pdf", None, features, profile="quality")
+        self.assertEqual(["pdf-scanned"], [chain.rule_id for chain in balanced])
+        self.assertEqual(["pdf-scanned", "pdf-document-vlm"], [chain.rule_id for chain in quality])
 
     def test_rules_have_unique_ids_valid_actions_and_no_shadowing(self) -> None:
         ids = [rule.rule_id for rule in routing.ROUTE_RULES]

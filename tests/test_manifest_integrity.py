@@ -10,6 +10,7 @@ from pathlib import Path
 
 from gateway.errors import ConcurrentWriteError
 from gateway.hashing import payload_hash_of, source_id_of_bytes
+from gateway.lineage import make_entry
 from gateway.manifest import (
     OutputWriteLock,
     atomic_write_json,
@@ -60,6 +61,26 @@ def _rendition(source_id: str) -> EvidenceDocument:
 
 
 class ManifestIntegrityTest(unittest.TestCase):
+    def test_lineage_accepts_actual_runtime_versions(self):
+        with tempfile.TemporaryDirectory() as d:
+            out = Path(d)
+            source_id = source_id_of_bytes(b"hello")
+            rendition = _rendition(source_id)
+            rendition.lineage.append(make_entry(
+                "parse",
+                input_sha256=source_id.split(":", 1)[1],
+                output_sha256=rendition.rendition_id.split(":", 1)[1],
+                tool="fixture",
+                tool_version="1",
+                runtime_versions={"parser-lib": "2.3.4"},
+                started_at="2026-08-23T00:00:00.000+00:00",
+                finished_at="2026-08-23T00:00:01.000+00:00",
+            ))
+            path = rendition_json_path(out, source_id, rendition.rendition_id)
+            atomic_write_json(path, rendition.to_dict())
+            loaded = load_rendition(out, source_id, rendition.rendition_id)
+            self.assertEqual({"parser-lib": "2.3.4"}, loaded["lineage"][0]["runtime_versions"])
+
     def test_payload_tampering_is_rejected(self):
         with tempfile.TemporaryDirectory() as d:
             out = Path(d)

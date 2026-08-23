@@ -1,8 +1,8 @@
 """线路优化：自动挑最快的软件源与模型镜像（安装阶段专用）。
 
-为什么在安装阶段做：whisper / paddleocr / docling / mineru 的模型是**首次运行时**下载的，
-而这些 worker 都声明 `network: false`。正确的解法是在 `adg setup` 把模型下好，让运行时
-禁网的声明成真——而不是放宽 worker 沙箱的环境变量白名单（安全基线只收不放）。
+为什么在安装阶段做：whisper / paddleocr / docling / mineru 的模型可能在**首次运行时**下载，
+而这些 worker 都声明 `network: false`。`adg setup` 提前下载，避免受信任 subprocess worker
+在解析阶段意外访问网络；真正的运行时断网仍只能由容器后端强制。
 
 纪律：
 - **不静默**：测速失败、全部不可用、回落官方源，都要能被调用方拿到并显示。

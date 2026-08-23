@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import os
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -23,7 +24,7 @@ from typing import Callable
 
 from . import PROTOCOL_VERSION
 from .errors import ContractViolation, SecurityViolation, WorkerFailed, WorkerUnavailable
-from .hardware import Environment
+from .hardware import Environment, check_requirements, detect_environment
 from .schema import SchemaValidationError, validate_model
 from .security import load_policy, resolve_worker_output
 
@@ -32,6 +33,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 # 可写状态根。清单与 adapter 随包只读分发，venv 必须落在包外：
 # uv tool/pipx 升级会重建环境，装在 site-packages 里的 worker 依赖会连带丢失。
 ADG_HOME = Path(os.environ.get("ADG_HOME") or (Path.home() / ".adg"))
+_REQUIREMENT_NAME = re.compile(r"^[A-Za-z0-9_.-]+")
 
 
 def worker_venv_dir(name: str, manifest_path: Path | None, venv_name: str = ".venv") -> Path | None:
@@ -44,6 +46,31 @@ def worker_venv_dir(name: str, manifest_path: Path | None, venv_name: str = ".ve
 
 def venv_python_of(venv_dir: Path) -> Path:
     return venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
+def _runtime_versions(python: str, requirements: list[str]) -> dict[str, str]:
+    """读取声明依赖的实际安装版本；不把浮动安装伪装成可复现环境。"""
+    names = [match.group(0) for spec in requirements if (match := _REQUIREMENT_NAME.match(spec))]
+    if not names:
+        return {}
+    script = (
+        "import importlib.metadata as m,json,sys; "
+        "names=json.loads(sys.argv[1]); "
+        "print(json.dumps({name:m.version(name) for name in names},sort_keys=True))"
+    )
+    try:
+        result = subprocess.run(
+            [python, "-c", script, json.dumps(names)],
+            capture_output=True,
+            text=True,
+            errors="replace",
+            timeout=30,
+            check=True,
+        )
+        versions = json.loads(result.stdout)
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return {}
+    return versions if isinstance(versions, dict) else {}
 
 
 # 解析函数签名：(source_path: Path, *, kind: str, format: str|None, options: dict,
@@ -78,6 +105,7 @@ class WorkerInfo:
     # docker
     docker_image: str | None = None
     manifest_path: Path | None = None
+    runtime_versions: dict[str, str] = field(default_factory=dict)
 
     @property
     def worker_id(self) -> str:
@@ -89,10 +117,19 @@ class WorkerInfo:
         return self.venv_python.parent.parent if self.venv_python else None
 
 
+@dataclass(frozen=True)
+class WorkerAvailability:
+    available: bool
+    reason: str  # available / unavailable / hardware_unmet
+    detail: str
+    requirement_problems: tuple[str, ...] = ()
+
+
 class WorkerRegistry:
     def __init__(self) -> None:
         self.workers: dict[str, WorkerInfo] = {}
         self._availability_cache: dict[str, tuple[bool, str]] = {}
+        self._environment: Environment | None = None
 
     # ---------- 注册 ----------
 
@@ -168,14 +205,32 @@ class WorkerRegistry:
     # ---------- 可用性 ----------
 
     def availability(self, w: WorkerInfo, env: Environment | None = None, *, refresh: bool = False) -> tuple[bool, str]:
+        status = self.availability_status(w, env, refresh=refresh)
+        return status.available, status.detail
+
+    def availability_status(
+        self, w: WorkerInfo, env: Environment | None = None, *, refresh: bool = False
+    ) -> WorkerAvailability:
+        """运行时存在性与硬件要求的单一判定入口。"""
         key = f"{w.name}:{w.backend}"
-        if not refresh and key in self._availability_cache:
-            return self._availability_cache[key]
-        ok, reason = self._check_availability(w, env)
-        self._availability_cache[key] = (ok, reason)
-        return ok, reason
+        if refresh or key not in self._availability_cache:
+            self._availability_cache[key] = self._check_availability(w, env)
+        runtime_ok, runtime_detail = self._availability_cache[key]
+        if not runtime_ok:
+            return WorkerAvailability(False, "unavailable", runtime_detail)
+        actual_env = env
+        if actual_env is None:
+            if self._environment is None:
+                self._environment = detect_environment()
+            actual_env = self._environment
+        requirements_ok, problems = check_requirements(w.requirements, actual_env)
+        if not requirements_ok:
+            return WorkerAvailability(False, "hardware_unmet", "；".join(problems), tuple(problems))
+        return WorkerAvailability(True, "available", runtime_detail)
 
     def _check_availability(self, w: WorkerInfo, env: Environment | None) -> tuple[bool, str]:
+        if w.backend == "subprocess" and w.requirements.get("network") is True:
+            return False, "需要联网的 worker 必须使用可执行网络策略的容器后端"
         if w.backend == "inproc":
             return True, "stdlib 内置"
         if w.backend == "docker":
@@ -215,6 +270,8 @@ class WorkerRegistry:
             ).returncode
             if rc != 0:
                 return False, f"依赖未安装: {w.probe_import}（adg setup --worker {w.name}）"
+        if w.python_requires and not w.runtime_versions:
+            w.runtime_versions = _runtime_versions(py, w.python_requires)
         return True, "subprocess 可用"
 
 
@@ -494,8 +551,12 @@ def _validate_fragment(fragment: dict) -> None:
             if not isinstance(block, dict) or not isinstance(block.get("elements", []), list):
                 raise ContractViolation("worker fragment block/elements 结构非法")
             for element in block.get("elements", []):
-                if not isinstance(element, dict) or not isinstance(element.get("locator"), dict):
-                    raise ContractViolation("worker fragment element 必须包含 locator 对象")
+                if (
+                    not isinstance(element, dict)
+                    or not isinstance(element.get("type"), str)
+                    or not isinstance(element.get("locator"), dict)
+                ):
+                    raise ContractViolation("worker fragment element 必须包含字符串 type 与 locator 对象")
     for key in ("quality_dims", "fitness", "annotations"):
         if key in fragment and not isinstance(fragment[key], dict):
             raise ContractViolation(f"worker fragment.{key} 必须是对象")
@@ -594,6 +655,8 @@ def execute_worker(
         elif w.backend == "subprocess":
             if not w.adapter_path or not w.adapter_path.exists():
                 raise WorkerUnavailable("adapter 缺失")
+            if w.requirements.get("network") is True:
+                raise WorkerUnavailable("需要联网的 worker 必须使用可执行网络策略的容器后端")
             result = run_subprocess_protocol(w, request, timeout=timeout, max_output_bytes=max_out, env_passthrough=env_pass)
         else:
             raise WorkerUnavailable(f"未知后端 {w.backend}")
@@ -606,4 +669,3 @@ def make_work_dir(base: Path, job_id: str) -> Path:
     d = internal_dir(base, "work", job_id)
     d.mkdir(parents=True, exist_ok=True)
     return d
-

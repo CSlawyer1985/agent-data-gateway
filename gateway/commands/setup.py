@@ -65,7 +65,7 @@ def build(sub) -> None:
         help=f"pip 索引 URL。未指定时读环境变量 {PIP_INDEX_ENV}；两者皆空则自动测速选最快的源",
     )
     p.add_argument("--no-probe", action="store_true", help="不自动测速选源，直接用 pip 默认源")
-    p.add_argument("--no-models", action="store_true", help="跳过模型预热（音视频转写首次使用时会现下）")
+    p.add_argument("--no-models", action="store_true", help="跳过模型预取（运行前需自行确保本地模型就绪）")
     p.set_defaults(handler=run)
 
 
@@ -101,7 +101,7 @@ def run(args) -> int:
         return 2
     rc = _install_targets(targets, args.dry_run, args.yes, index_url)
     # 模型预热同样适用于 --worker/--all/--lite：装完就把模型下好，
-    # 免得第一次解析在一个声称 network=false 的 worker 里静默等下载
+    # 避免受信任 subprocess worker 第一次解析时意外联网等下载。
     if not args.dry_run and not getattr(args, "no_models", False):
         _prefetch_models(build_registry(), detect_environment(), only={w.name for w in targets})
     return rc
@@ -146,8 +146,8 @@ def _setup_auto(args, index_url: str | None) -> int:
 def _prefetch_models(registry, env, only: set[str] | None = None) -> None:
     """把「首次运行才下模型」提前到安装阶段。
 
-    whisper 等 worker 声明 network=false，但模型是运行时下载的——不预热的话，第一次解析
-    音视频会在一个声称不联网的 worker 里静默等待下载。预热让那句声明成真。
+    whisper 等 worker 声明 network=false，但上游默认可能在运行时下载。预热把网络动作前移；
+    subprocess 的声明仍是受信任代码纪律，只有容器能在操作系统层执行断网。
     """
     import json as _json
 
@@ -180,7 +180,7 @@ def _prefetch_models(registry, env, only: set[str] | None = None) -> None:
                            env=model_env, check=True, timeout=3600)
             print(f"  {w.name}: 模型就绪")
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
-            print(f"  ⚠️ {w.name}: 模型预热失败（{type(e).__name__}）——首次解析时会重试下载")
+            print(f"  ⚠️ {w.name}: 模型预热失败（{type(e).__name__}）——请重试 setup 或按 worker 提示补齐本地模型")
 
 
 def _in_auto_bundle(w) -> bool:
