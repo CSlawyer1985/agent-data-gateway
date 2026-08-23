@@ -28,8 +28,6 @@ from .commands import (
 )
 from .errors import ADGError
 
-EXIT_CODE = {"pass": 0, "pass_with_warnings": 1, "fail": 2}
-
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(

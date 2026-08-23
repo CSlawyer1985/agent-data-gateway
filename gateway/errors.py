@@ -32,10 +32,3 @@ class WorkerFailed(ADGError):
         super().__init__(message)
         self.kind = kind
 
-
-class UnsupportedFormat(ADGError):
-    """明确不支持的格式。"""
-
-
-class EncryptedFile(ADGError):
-    """文件加密，无法在无密码情况下读取。"""
