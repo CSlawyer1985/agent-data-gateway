@@ -185,6 +185,18 @@ class PackageView:
                 )
                 unreliable.append(entry)
         quality = self.manifest.quality
+        # 计划要跑却没跑的链。「已读全」只说文件都处理了，不代表每条链都跑过——
+        # 不把这件事说出来，就等同于假装提完了（spec 11 §6.2 不变量 1）。
+        chains_not_run = [
+            {
+                "package_relative_path": it.package_relative_path,
+                "rule_id": row["rule_id"],
+                "reason": row.get("reason", ""),
+            }
+            for it in self.manifest.items
+            for row in (it.chain_executions or [])
+            if row.get("status") == "skipped"
+        ]
         return {
             "contract_version": AGENT_API_VERSION,
             "package_root_name": self.manifest.package_root_name,
@@ -200,6 +212,8 @@ class PackageView:
             "reliably_read": reliable,
             "not_reliably_read": unreliable,
             "unresolved_count": len(self.manifest.integrity.get("unresolved_items", [])),
+            "chains_not_run_count": len(chains_not_run),
+            "chains_not_run": chains_not_run,
         }
 
     # ---------------- 3. get_document ----------------

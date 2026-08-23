@@ -21,7 +21,9 @@ def _run(argv: list[str]) -> int:
         return cli.main(argv)
 
 
-class ProfileExecutionTest(unittest.TestCase):
+class _ProfileFixture(unittest.TestCase):
+    """只建 fixture、不含断言，供下面两个测试类共用（避免继承导致重跑）。"""
+
     @classmethod
     def setUpClass(cls):
         cls._tmp = tempfile.TemporaryDirectory()
@@ -30,10 +32,12 @@ class ProfileExecutionTest(unittest.TestCase):
         cls.pkg.mkdir()
         (cls.pkg / "带图合同.pdf").write_bytes(make_pdf_digital_with_image())
         cls.results = {}
+        cls.outs = {}
         for profile in ("fast", "balanced"):
             out = root / f"out_{profile}"
             _run(["scan", str(cls.pkg), "--out", str(out)])
             _run(["parse", str(cls.pkg), "--out", str(out), "--no-index", "--profile", profile])
+            cls.outs[profile] = out
             cls.results[profile] = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
 
     @classmethod
@@ -46,6 +50,8 @@ class ProfileExecutionTest(unittest.TestCase):
     def _execution(self, profile, rule_id):
         return next(e for e in self._pdf_item(profile)["chain_executions"] if e["rule_id"] == rule_id)
 
+
+class ProfileExecutionTest(_ProfileFixture):
     def test_signal_probe_reached_the_manifest(self):
         signals = self._pdf_item("fast")["signals"]
         self.assertEqual(signals["text_layer"], "present")
@@ -79,6 +85,44 @@ class ProfileExecutionTest(unittest.TestCase):
             blob = json.dumps(self.results[profile], ensure_ascii=False)
             self.assertNotIn(str(self.pkg), blob)
             self.assertNotIn("/private/", blob)
+
+
+class StatusTellsTheTruthTest(_ProfileFixture):
+    """「已读全」只在文件都读到、且计划的链都跑过时才说得出口。
+
+    spec 11 §6.2 不变量 1：快速档的含义是「你让我先跑快的」，不是「我假装提完了」。
+    """
+
+    def _status(self, profile):
+        out, err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
+            code = cli.main(["status", str(self.pkg), "--out", str(self.outs[profile])])
+        return code, out.getvalue()
+
+    def test_fast_never_claims_everything_was_read(self):
+        code, text = self._status("fast")
+        self.assertNotIn("已读全", text)
+        self.assertIn("未执行", text)
+        self.assertIn("pdf-visual", text)
+        self.assertIn("profile_fast", text)
+
+    def test_unrun_chain_makes_it_one_not_zero(self):
+        """退出码 1 = 完成但有未读全项。链没跑就是没读全，不能报 0。"""
+        self.assertEqual(self._status("fast")[0], 1)
+
+    def test_balanced_may_claim_it_when_nothing_was_skipped(self):
+        code, text = self._status("balanced")
+        self.assertIn("已读全", text)
+        self.assertEqual(code, 0)
+
+    def test_json_carries_the_same_fact_for_agents(self):
+        """人看的那句话和 agent 读的字段必须同源，不能只修一边。"""
+        out, _err = io.StringIO(), io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(_err):
+            cli.main(["status", str(self.pkg), "--out", str(self.outs["fast"]), "--json"])
+        payload = json.loads(out.getvalue())
+        self.assertEqual(payload["chains_not_run_count"], 1)
+        self.assertEqual(payload["chains_not_run"][0]["rule_id"], "pdf-visual")
 
 
 if __name__ == "__main__":

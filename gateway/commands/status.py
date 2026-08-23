@@ -31,13 +31,22 @@ def run(args) -> int:
         return 2
 
     unreliable = result["not_reliably_read"]
+    not_run = result["chains_not_run"]
     if args.json:
         print_json(result)
     else:
+        # 「已读全」只在两件事都成立时才说得出口：文件都可靠读取了，且计划的链都跑过了。
+        all_clear = not unreliable and not not_run
         summary_line(
             f"status: 已可靠读取 {result['reliably_read_count']} 项；未可靠读取 {len(unreliable)} 项"
-            + (f"（含 {unreliable[0]['package_relative_path']} 等）" if unreliable else "——材料包已读全")
+            + (f"（含 {unreliable[0]['package_relative_path']} 等）" if unreliable else
+               ("——材料包已读全" if all_clear else ""))
         )
         for e in unreliable[:20]:
             print(f"  ❔ {e['package_relative_path']}（{e['kind']}）: {e['reason']}")
-    return 0 if not unreliable else 1
+        if not_run:
+            print(f"  ⚠️ {len(not_run)} 条链未执行——文件都处理了，但这些角度没看过：")
+            for e in not_run[:10]:
+                print(f"     {e['package_relative_path']}: {e['rule_id']}（{e['reason']}）")
+            print("     补跑: adg parse <包> --profile quality")
+    return 0 if not unreliable and not not_run else 1
