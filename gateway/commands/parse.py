@@ -27,8 +27,8 @@ def build(sub) -> None:
         "--profile",
         choices=routing.PROFILES,
         default=routing.DEFAULT_PROFILE,
-        help="跑几条链：fast 只跑首选；balanced 探测到信号才并跑；quality 探测不确定也跑。"
-             "ADG 不判断哪条结果更好，多跑只是多给你几份材料",
+        help="fast 挑链上轻的工具，尽快出一个能用的结果；balanced 整条链、用效果最好的可用工具；"
+             "quality 多条工作流并跑，各自出结果。ADG 不判断哪个更好——多跑只是多给你几份材料",
     )
     p.add_argument("--no-index", action="store_true", help="解析后不建检索索引（之后可单独 adg index）")
     p.add_argument("--json", action="store_true", help="完整 JSON 输出")

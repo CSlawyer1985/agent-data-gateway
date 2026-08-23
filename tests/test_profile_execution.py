@@ -33,7 +33,7 @@ class _ProfileFixture(unittest.TestCase):
         (cls.pkg / "带图合同.pdf").write_bytes(make_pdf_digital_with_image())
         cls.results = {}
         cls.outs = {}
-        for profile in ("fast", "balanced"):
+        for profile in ("fast", "balanced", "quality"):
             out = root / f"out_{profile}"
             _run(["scan", str(cls.pkg), "--out", str(out)])
             _run(["parse", str(cls.pkg), "--out", str(out), "--no-index", "--profile", profile])
@@ -58,8 +58,15 @@ class ProfileExecutionTest(_ProfileFixture):
         self.assertEqual(signals["page_images"], "present")
 
     def test_primary_chain_runs_under_every_profile(self):
-        for profile in ("fast", "balanced"):
+        for profile in ("fast", "balanced", "quality"):
             self.assertEqual(self._execution(profile, "pdf-digital-simple")["role"], "primary")
+
+    def test_fast_drops_heavy_tools_from_the_primary_chain(self):
+        """fast 要的是尽快出结果，重工具主动不试——记在 skipped_workers 里。"""
+        primary = self._execution("fast", "pdf-digital-simple")
+        dropped = [row["worker"] for row in primary.get("skipped_workers", [])]
+        self.assertIn("docling", dropped)
+        self.assertEqual(self._execution("balanced", "pdf-digital-simple").get("skipped_workers"), [])
 
     def test_fast_skips_the_parallel_chain_and_says_why(self):
         """少跑必须显性：跳过的链留在记录里，带原因（ADR 0005 决策 5）。"""
@@ -67,21 +74,22 @@ class ProfileExecutionTest(_ProfileFixture):
         self.assertEqual(skipped["status"], "skipped")
         self.assertEqual(skipped["reason"], "profile_fast")
 
-    def test_balanced_actually_executes_the_parallel_chain(self):
-        """balanced 下这条链必须真的跑过——成没成功取决于 worker 是否可用，不在此断言。"""
-        executed = self._execution("balanced", "pdf-visual")
+    def test_only_quality_executes_the_parallel_chain(self):
+        """并跑属于 quality。balanced 是「单个更好的工作流」，不是「多个」。"""
+        self.assertEqual(self._execution("balanced", "pdf-visual")["status"], "skipped")
+        executed = self._execution("quality", "pdf-visual")
         self.assertNotEqual(executed["status"], "skipped")
         self.assertEqual(executed["role"], "parallel")
 
     def test_primary_result_is_unaffected_by_the_parallel_chain(self):
         """并跑不得改写主轨结论（spec 11 §4 规则 4）。"""
-        fast, balanced = self._pdf_item("fast"), self._pdf_item("balanced")
-        self.assertEqual(fast["status"], balanced["status"])
-        self.assertEqual(fast["renditions"], balanced["renditions"])
+        balanced, quality = self._pdf_item("balanced"), self._pdf_item("quality")
+        self.assertEqual(balanced["status"], quality["status"])
+        self.assertEqual(balanced["renditions"], quality["renditions"])
 
     def test_execution_record_never_leaks_absolute_paths(self):
         """执行记录里的 detail 来自 worker 异常消息，落盘前必须 scrub（spec 09）。"""
-        for profile in ("fast", "balanced"):
+        for profile in ("fast", "balanced", "quality"):
             blob = json.dumps(self.results[profile], ensure_ascii=False)
             self.assertNotIn(str(self.pkg), blob)
             self.assertNotIn("/private/", blob)
@@ -110,8 +118,8 @@ class StatusTellsTheTruthTest(_ProfileFixture):
         """退出码 1 = 完成但有未读全项。链没跑就是没读全，不能报 0。"""
         self.assertEqual(self._status("fast")[0], 1)
 
-    def test_balanced_may_claim_it_when_nothing_was_skipped(self):
-        code, text = self._status("balanced")
+    def test_quality_may_claim_it_when_nothing_was_skipped(self):
+        code, text = self._status("quality")
         self.assertIn("已读全", text)
         self.assertEqual(code, 0)
 

@@ -1,76 +1,109 @@
-"""多链执行计划（ADR 0005）：profile 决定跑几条，探测门控决定值不值得跑。"""
+"""执行计划（ADR 0005）：profile 选工作流，探测门控决定值不值得多跑一条。
+
+三档的语义：
+  fast      挑链上轻的工具，尽快拿到一个能用的结果；不并跑
+  balanced  整条链、先成功先得，拿到效果最好的可用工具；不并跑
+  quality   整条链 + 并跑声明的其他链，多个工作流各自出结果
+"""
 
 import unittest
 
 from gateway import routing
 
+# 测试里把 docling 当重工具（真实判断由 dispatcher 查 worker.json 的 weight/backend）
+_SLOW = {"docling", "mineru", "paddleocr", "rapidocr"}
 
-def _plan(profile, state=None, kind="pdf"):
+
+def _plan(profile, state=None, *, is_slow=lambda n: n in _SLOW):
     signals = {"page_images": state} if state else None
-    return routing.resolve_plan(kind, None, {}, signals, profile=profile)
+    return routing.resolve_plan("pdf", None, {}, signals, profile=profile, is_slow=is_slow)
 
 
-class TestProfileGating(unittest.TestCase):
-    """三档的实质区别就是门控松紧。"""
+class TestProfileSelectsTheWorkflow(unittest.TestCase):
+    """fast 与 balanced 的区别在主轨用什么工具，不在跑几条。"""
 
-    def test_fast_never_runs_parallel_chains(self):
-        for state in ("present", "unknown", "absent"):
-            plan, _ = _plan("fast", state)
-            self.assertEqual([p.rule_id for p in plan], ["pdf-digital-simple"], state)
+    def test_fast_drops_heavy_tools_from_the_primary_chain(self):
+        workers = _plan("fast", "present")[0][0].workers
+        self.assertNotIn("docling", workers)
+        self.assertEqual(workers[0], "pdfplumber")
 
-    def test_balanced_runs_only_on_confirmed_signal(self):
-        self.assertEqual(len(_plan("balanced", "present")[0]), 2)
-        self.assertEqual(len(_plan("balanced", "unknown")[0]), 1)
+    def test_balanced_keeps_the_whole_chain(self):
+        workers = _plan("balanced", "present")[0][0].workers
+        self.assertEqual(workers[0], "docling")
 
-    def test_quality_also_runs_on_unknown(self):
+    def test_dropped_tools_are_recorded_with_scope_worker(self):
+        """跳过工具≠跳过链：前者是「看了但没用最好的工具」，后者是「这个角度没看过」。"""
+        _, skipped = _plan("fast", "present")
+        dropped = [row for row in skipped if row.get("scope") == "worker"]
+        self.assertEqual([row["worker"] for row in dropped], ["docling"])
+        self.assertEqual(dropped[0]["reason"], "profile_fast_heavy")
+        self.assertEqual(dropped[0]["rule_id"], "pdf-digital-simple")
+
+    def test_all_heavy_chain_is_not_emptied(self):
+        """全链都重时不能把主轨清空——宁可慢，也不能什么都不做。"""
+        plan, _ = _plan("fast", "present", is_slow=lambda n: True)
+        self.assertEqual(plan[0].workers[0], "docling")
+
+
+class TestParallelIsQualityOnly(unittest.TestCase):
+    def test_fast_and_balanced_never_run_parallel_chains(self):
+        for profile in ("fast", "balanced"):
+            for state in ("present", "unknown", "absent"):
+                plan, _ = _plan(profile, state)
+                self.assertEqual([p.rule_id for p in plan], ["pdf-digital-simple"], f"{profile}/{state}")
+
+    def test_quality_runs_it_on_present_and_unknown(self):
         """探测不到不等于不存在——重点材料宁可多跑一次。"""
-        self.assertEqual(len(_plan("quality", "unknown")[0]), 2)
-        self.assertEqual(len(_plan("quality", "present")[0]), 2)
+        for state in ("present", "unknown"):
+            self.assertEqual(len(_plan("quality", state)[0]), 2, state)
 
-    def test_absent_blocks_every_profile(self):
+    def test_absent_blocks_even_quality(self):
         """确认没有图还去 OCR 是纯浪费，这正是探测门控省钱的地方。"""
-        for profile in routing.PROFILES:
-            plan, _ = _plan(profile, "absent")
-            self.assertEqual([p.rule_id for p in plan], ["pdf-digital-simple"], profile)
+        plan, skipped = _plan("quality", "absent")
+        self.assertEqual([p.rule_id for p in plan], ["pdf-digital-simple"])
+        self.assertIn("absent", skipped[0]["reason"])
 
 
 class TestSkippingIsAlwaysRecorded(unittest.TestCase):
     """ADR 0005 决策 5：少跑必须显性，静默省略等同于假装跑过了。"""
 
-    def test_every_skipped_chain_leaves_a_reason(self):
-        cases = [("fast", "present"), ("balanced", "absent"), ("balanced", "unknown"), ("quality", "absent")]
-        for profile, state in cases:
-            plan, skipped = _plan(profile, state)
-            self.assertEqual(len(skipped), 1, f"{profile}/{state} 少跑了却没记录")
-            self.assertEqual(skipped[0]["rule_id"], "pdf-visual")
-            self.assertTrue(skipped[0]["reason"], "跳过记录必须带原因")
+    def _chain_skips(self, profile, state):
+        return [row for row in _plan(profile, state)[1] if row.get("scope") == "chain"]
+
+    def test_every_unrun_chain_leaves_a_reason(self):
+        for profile, state in [("fast", "present"), ("balanced", "present"), ("quality", "absent")]:
+            rows = self._chain_skips(profile, state)
+            self.assertEqual(len(rows), 1, f"{profile}/{state} 少跑了却没记录")
+            self.assertEqual(rows[0]["rule_id"], "pdf-visual")
+            self.assertTrue(rows[0]["reason"])
 
     def test_reason_distinguishes_why(self):
-        """「你让我跑快的」和「探测到没有图」是两种不同的少跑，不能混成一句。"""
-        self.assertEqual(_plan("fast", "present")[1][0]["reason"], "profile_fast")
-        self.assertEqual(_plan("balanced", "absent")[1][0]["reason"], "signal_page_images_absent")
-        self.assertEqual(_plan("balanced", "unknown")[1][0]["reason"], "signal_page_images_unknown")
+        """「你让我跑快的」「你没要多跑」「探测到没有图」是三种不同的少跑。"""
+        self.assertEqual(self._chain_skips("fast", "present")[0]["reason"], "profile_fast")
+        self.assertEqual(self._chain_skips("balanced", "present")[0]["reason"], "profile_balanced")
+        self.assertEqual(self._chain_skips("quality", "absent")[0]["reason"], "signal_page_images_absent")
 
     def test_nothing_skipped_means_empty_record(self):
-        plan, skipped = _plan("balanced", "present")
+        plan, skipped = _plan("quality", "present")
         self.assertEqual(len(plan), 2)
         self.assertEqual(skipped, [])
 
     def test_dangling_declaration_is_recorded_not_ignored(self):
         """并跑声明指向不存在的规则时，不能悄悄当无事发生。"""
         rule = routing.RouteRule(
-            "probe-dangling", "pdf", "测试用",
-            ("pypdf",),
+            "probe-dangling", "pdf", "测试用", ("pypdf",),
             parallel_with=(routing.ParallelChain("no-such-rule"),),
         )
         original = routing.ROUTE_RULES
         routing.ROUTE_RULES = (rule,) + original
         try:
-            plan, skipped = routing.resolve_plan("pdf", None, {}, {"page_images": "present"})
+            plan, skipped = routing.resolve_plan(
+                "pdf", None, {}, {"page_images": "present"}, profile="quality"
+            )
         finally:
             routing.ROUTE_RULES = original
         self.assertEqual([p.rule_id for p in plan], ["probe-dangling"])
-        self.assertEqual(skipped, [{"rule_id": "no-such-rule", "reason": "unknown_rule"}])
+        self.assertEqual(skipped, [{"scope": "chain", "rule_id": "no-such-rule", "reason": "unknown_rule"}])
 
 
 class TestPlanShape(unittest.TestCase):
@@ -80,15 +113,13 @@ class TestPlanShape(unittest.TestCase):
         self.assertTrue(plan[1].parallel)
 
     def test_plan_carries_reason_for_each_chain(self):
-        """每条链都要能说出自己为什么被选中——adg routes 与报告共用这句话。"""
         for chain in _plan("quality", "present")[0]:
             self.assertTrue(chain.reason.strip(), chain.rule_id)
 
     def test_order_is_execution_order_not_ranking(self):
         """顺序只表示先后，不表示优劣（ADR 0005 决策 4）。
 
-        这里钉住的是数据形状：PlannedChain 不带任何分数/排名字段，
-        想加的人得先修订 ADR 0005。
+        钉住数据形状：PlannedChain 不带任何分数/排名字段，想加的人得先修订 ADR。
         """
         chain = _plan("quality", "present")[0][0]
         for banned in ("score", "rank", "confidence", "quality"):

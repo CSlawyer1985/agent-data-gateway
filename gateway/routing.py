@@ -218,33 +218,51 @@ def resolve_plan(
     signals: dict | None = None,
     *,
     profile: str = DEFAULT_PROFILE,
+    is_slow: Callable[[str], bool] | None = None,
 ) -> tuple[list[PlannedChain], list[dict]]:
-    """按 profile 决定跑哪几条链，并返回被跳过的声明。
+    """按 profile 决定用哪条工作流、跑几条。
 
-    fast 只跑首选链；balanced / quality 追加规则声明的并跑链，逐条过信号门控。
-    第二个返回值是跳过记录——少跑必须显性，静默省略等同于假装跑过了（ADR 0005 决策 5）。
+    - fast     跳过重工具，用链上快的那些——要的是尽快拿到一个能用的结果
+    - balanced 整条链，先成功先得，拿到的是效果最好的可用工具
+    - quality  整条链 + 规则声明的并跑链，多个工作流各自出结果
+
+    is_slow 由调用方提供（worker 的 weight/backend 归 worker.json，不归路由表）。
+    第二个返回值是跳过记录，分两种 scope，语义不同不可混：
+    - chain：整条链没跑，这个角度根本没看过
+    - worker：链跑了，只是链内某个重工具没用上（fast 档），看了但没用最好的工具
+    少跑必须显性，静默省略等同于假装跑过了（ADR 0005 决策 5）。
     """
     rule = resolve_rule(kind, format_, features)
     if rule is None:
         return [], []
-    plan = [PlannedChain(rule.rule_id, tuple(rule.workers), rule.reason)]
     skipped: list[dict] = []
+    workers = tuple(rule.workers)
+    if profile == "fast" and is_slow is not None:
+        lean = tuple(name for name in workers if not is_slow(name))
+        # 全链都重时不能把主轨清空——那等于什么都不做。宁可慢，也不能不干活。
+        if lean:
+            for name in workers:
+                if name not in lean:
+                    skipped.append({"scope": "worker", "rule_id": rule.rule_id,
+                                    "worker": name, "reason": "profile_fast_heavy"})
+            workers = lean
+    plan = [PlannedChain(rule.rule_id, workers, rule.reason)]
     for candidate in rule.parallel_with:
         target = next((r for r in ROUTE_RULES if r.rule_id == candidate.rule_id), None)
         if target is None:
-            skipped.append({"rule_id": candidate.rule_id, "reason": "unknown_rule"})
+            skipped.append({"scope": "chain", "rule_id": candidate.rule_id, "reason": "unknown_rule"})
             continue
-        if profile == "fast":
-            skipped.append({"rule_id": candidate.rule_id, "reason": "profile_fast"})
+        if profile != "quality":
+            skipped.append({"scope": "chain", "rule_id": candidate.rule_id, "reason": f"profile_{profile}"})
             continue
         needed = candidate.requires_signal
         if needed:
             state = (signals or {}).get(needed, "unknown")
-            # balanced 只在信号确认在场时跑；quality 连 unknown 也跑——探测不到不等于
-            # 不存在，重点材料宁可多跑一次。absent 在任何档都不跑：确认没有图还去 OCR
-            # 是纯浪费，这正是探测门控省钱的地方（spec 11 §6.1）。
-            if not (state == "present" or (profile == "quality" and state == "unknown")):
-                skipped.append({"rule_id": candidate.rule_id, "reason": f"signal_{needed}_{state}"})
+            # quality 档连 unknown 也跑——探测不到不等于不存在，重点材料宁可多跑一次。
+            # 但 absent 仍然不跑：确认没有图还去 OCR 是纯浪费，这正是探测门控省钱的地方。
+            if state == "absent":
+                skipped.append({"scope": "chain", "rule_id": candidate.rule_id,
+                                "reason": f"signal_{needed}_{state}"})
                 continue
         plan.append(PlannedChain(target.rule_id, tuple(target.workers), target.reason, parallel=True))
     return plan, skipped

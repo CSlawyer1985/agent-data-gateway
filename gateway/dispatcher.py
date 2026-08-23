@@ -207,15 +207,24 @@ class Dispatcher:
             skipped: list[dict] = []
         else:
             plan, skipped = routing.resolve_plan(
-                item.kind, item.format, features, item.signals, profile=self.options.profile
+                item.kind, item.format, features, item.signals,
+                profile=self.options.profile, is_slow=self._is_slow_worker,
             )
         if not plan:
             self._mark_unresolved(item, f"该类型（{item.kind}/{item.format or '-'}）无解析链", stage="parse")
             return []
+        # 链级跳过＝这个角度没看过；工具级跳过＝看了但没用最好的工具。两者不可混为一谈。
         executions: list[dict] = [
             {"rule_id": row["rule_id"], "role": "parallel", "status": "skipped", "reason": row["reason"]}
             for row in skipped
+            if row.get("scope") == "chain"
         ]
+        skipped_workers: dict[str, list[dict]] = {}
+        for row in skipped:
+            if row.get("scope") == "worker":
+                skipped_workers.setdefault(row["rule_id"], []).append(
+                    {"worker": row["worker"], "reason": row["reason"]}
+                )
         all_produced: list[Item] = []
         got_content = False
         primary: dict = {}
@@ -230,6 +239,7 @@ class Dispatcher:
                     "worker": outcome["worker"],
                     # detail 来自 worker 异常消息，可能含绝对路径；落盘前 scrub（spec 09）
                     "fell_back": [_scrub_fallback(fb) for fb in outcome["fell_back"]],
+                    "skipped_workers": skipped_workers.get(planned.rule_id, []),
                 }
             )
             if outcome["status"] in ("ok", "transform"):
@@ -253,6 +263,11 @@ class Dispatcher:
             )
         self._mark_unresolved(item, reason_text, stage="parse", fell_back=fell_back)
         return all_produced
+
+    def _is_slow_worker(self, name: str) -> bool:
+        """重工具：docker 要拉镜像，heavy 要大模型或 GPU。fast 档要的是尽快出结果。"""
+        w = self.registry.get(name)
+        return w is not None and (w.weight == "heavy" or w.backend == "docker")
 
     def _run_chain(self, item: Item, path: Path, planned: routing.PlannedChain, features: dict) -> dict:
         """跑一条链：链内先成功先得（spec 08 降级纪律不变）。
