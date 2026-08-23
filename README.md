@@ -199,6 +199,10 @@ ADG 是**给 Agent 用的命令行工具**：Claude Code 等 Agent 经 Bash 调�
 - **每条命中带 `quotable`**：来自该 rendition 的 `fitness.quotation`。false 表示能检索、能作线索，但锚点不足以可靠引用。
 - **每条命中可回溯**：`resolve_anchor(element_id)` 给出原件路径、parser 与版本、页码/坐标/单元格/时间码及前后文。
 
+**由使用者主动调用**：ADG 不往项目里装 skill、不写 `CLAUDE.md` / `AGENTS.md` 片段、不做 MCP server，
+也不试图让 Agent 自动发现自己。需要用它的人自己让 Agent 去跑 `adg`——工具负责在被调用时给出诚实结果，
+不负责推销自己（[ADR 0003](docs/adr/0003-distribution-and-target-runtime.md) 决策 6）。
+
 ## 目录结构
 
 ```
@@ -228,6 +232,14 @@ agent-data-gateway/
 ## 规范文档
 
 `docs/spec/` 下 00-11 是权威说明；`models/*.v0.1.json` 是机器可读 Schema（normative，冲突时以 Schema 为准）。
+
+架构决策记录在 `docs/adr/`——**读这个项目（人或 AI）应先看这三份，它们解释了「为什么是这样」**：
+
+| ADR | 决定了什么 |
+|---|---|
+| [0001 契约权威与写入所有权](docs/adr/0001-contract-authority-and-write-ownership.md) | 谁拥有哪个事实的定稿权；Schema / spec / README 冲突时以谁为准；同一输出目录单写者 |
+| [0002 资料利用率作为一等目标](docs/adr/0002-utilization-as-first-class-goal.md) | 完整性之外并列利用率；降级链（or）之外增加增益轨（and）。**设计已定稿，实现未开始** |
+| [0003 分发形态与目标运行环境](docs/adr/0003-distribution-and-target-runtime.md) | 面向开发机上的编码 Agent，走 pip / uv tool 分发；冻结打包已实测否决；venv 落 `~/.adg`；不做 Agent 自动发现入口 |
 
 ## 迭代日志
 

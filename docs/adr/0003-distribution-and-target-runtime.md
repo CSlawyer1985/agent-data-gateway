@@ -19,9 +19,10 @@ JSON、退出码三态，这是给程序读的接口，不是给人看的界面�
 
 ## 决策
 
-1. **目标运行环境是开发机上的编码 Agent**，其宿主已具备 Python。不做 `.app`、双击入口、
-   图形界面，也不购置代码签名与公证。面向非技术终端用户的形态若将来需要，另开 ADR，
-   不在本条范围内隐式扩张。
+1. **目标运行环境是开发机上的编码 Agent**（Claude Code、Codex 这类），其宿主已具备 Python。
+   不做 `.app`、双击入口、图形界面，也不购置代码签名与公证。
+   终端用户（律师）**不经中间产品层**，直接使用这些 Agent——链条是 `adg → Agent → 人`，
+   两跳，没有需要额外照顾的第三形态。
 
 2. **分发形态是 `pip install` / `uv tool install` / `pipx install`**。清单（`worker.json`）
    与 adapter 随 wheel 只读分发，已验证 `workers/`、`models/`、`packs/` 均正确进包，
@@ -45,6 +46,10 @@ JSON、退出码三态，这是给程序读的接口，不是给人看的界面�
    `pyproject.toml` 的 `requires-python >=3.10` 是包的兼容声明，不是部署约定。
    worker venv 因解释器变更而失效时，`adg check` 本就会探测出不可用并提示重装，以此为兜底。
 
+6. **不提供 Agent 自动发现入口。** 不随包安装 skill、`CLAUDE.md` / `AGENTS.md` 片段，
+   也不做 MCP server。由使用者主动让 Agent 调用 `adg`：工具负责在被调用时给出诚实结果，
+   不负责让自己被发现。
+
 ## 后果
 
 - 「怎么方便安装」不再是打包问题，而是 `adg setup` 的问题：依赖下载体验、镜像选源、
@@ -55,3 +60,5 @@ JSON、退出码三态，这是给程序读的接口，不是给人看的界面�
   再次提出冻结打包前应先复核这三条实测事实。
 - 决策 4 落地于 `gateway/workers.py` 的 `ADG_HOME` 与 `worker_venv_dir()`，
   `~/.adg/workers` 本就在 worker 发现链上，无需新增发现路径。
+- 决策 6 排除了一整类工作（skill 分发、`adg init` 写入项目配置、MCP server），
+  它们不再是「尚未做」，而是「不做」。使用方自行配置的成本由使用方承担。
