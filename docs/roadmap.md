@@ -35,6 +35,11 @@ worker 的 venv 落 `ADG_HOME`（默认 `~/.adg`），不落 `site-packages`—�
 执行记录落 `item.chain_executions`，`scope` 区分「整条链没跑」与「链内某个重工具没用上」。
 `adg status` 会报未执行的链并据此返回退出码 1。
 
+### 人类可读执行记录 — 已实现
+
+`manifest.md` 与 `reports/report.md` 都会列出每份材料的解析链、主轨/并跑角色、执行状态与原因。
+链级未执行和链内未用重工具分开呈现；JSON 契约不变，仍以 `item.chain_executions` 为权威记录。
+
 ### 利用率比值 — 已撤销（[ADR 0004](adr/0004-utilization-is-not-a-ratio.md)）
 
 不要再尝试实现 `item.utilization`。分子「已成功提取的信号数」需要 ground truth，
@@ -43,19 +48,15 @@ worker 的 venv 落 `ADG_HOME`（默认 `~/.adg`），不落 `site-packages`—�
 
 ## 下一步（按优先级）
 
-1. **`adg report` 与 `manifest.md` 呈现执行记录。**
-   记录已落 `chain_executions`，但只有 `adg status` 会读。报告和人类可读清单仍看不到
-   「这份材料跑了哪几条链、哪条没跑」。`--json` 那边不用动，字段已在。
-
-2. **把并跑声明推广到其他 kind。**
+1. **把并跑声明推广到其他 kind。**
    目前只有 `pdf-digital-simple` 声明了 `parallel_with`（代表样本，已穿过真实验收）。
    docx / xlsx / image 等待同处理。做之前先想清楚各自的「视觉视角」是什么。
 
-3. **信号探测器推广到 docx / xlsx / email。**
+2. **信号探测器推广到 docx / xlsx / email。**
    PDF 的做法见 `packs/legal/pdf_lite.py` 的 `_pdf_signals`：复用 preflight 已有的解析，
    不额外读文件；未命中只有在采样可信时才判 `absent`。
 
-4. **spec 11 §5 分歧记录（四期）。**
+3. **spec 11 §5 分歧记录（四期）。**
    复用 `cross_rendition_alignment`。注意 ADR 0004 决策 4：只记录，不裁决。
 
 ## 开发环境

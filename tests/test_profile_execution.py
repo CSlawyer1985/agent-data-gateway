@@ -132,6 +132,22 @@ class StatusTellsTheTruthTest(_ProfileFixture):
         self.assertEqual(payload["chains_not_run_count"], 1)
         self.assertEqual(payload["chains_not_run"][0]["rule_id"], "pdf-visual")
 
+    def test_manifest_and_report_show_executed_and_skipped_chains(self):
+        """机器字段已有；两个 Markdown 入口也必须说清哪条跑了、哪条没跑。"""
+        fast_out = self.outs["fast"]
+        self.assertEqual(_run(["report", str(self.pkg), "--out", str(fast_out)]), 0)
+        for path in (fast_out / "manifest.md", fast_out / "reports" / "report.md"):
+            with self.subTest(path=path):
+                text = path.read_text(encoding="utf-8")
+                self.assertIn("解析链执行记录", text)
+                self.assertIn("带图合同.pdf", text)
+                self.assertIn("pdf-digital-simple", text)
+                self.assertIn("已完成", text)
+                self.assertIn("未用 `docling`（profile_fast_heavy）", text)
+                self.assertIn("pdf-visual", text)
+                self.assertIn("未执行", text)
+                self.assertIn("原因 `profile_fast`", text)
+
 
 if __name__ == "__main__":
     unittest.main()

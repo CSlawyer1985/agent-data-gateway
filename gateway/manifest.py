@@ -15,11 +15,12 @@ import json
 import os
 import tempfile
 import threading
+from collections.abc import Iterable
 from pathlib import Path
 
 from .errors import ConcurrentWriteError, DataIntegrityError
 from .hashing import package_id_of, payload_hash_of, rendition_id_of
-from .models import PackageManifest
+from .models import Item, PackageManifest
 from .schema import validate_model
 
 MANIFEST_JSON = "manifest.json"
@@ -361,6 +362,53 @@ _STATUS_LABEL = {
 
 _OVERALL_ICON = {"pass": "✅", "pass_with_warnings": "⚠️", "fail": "❌"}
 
+_CHAIN_ROLE_LABEL = {"primary": "主轨", "parallel": "并跑"}
+
+_CHAIN_STATUS_LABEL = {
+    "ok": "已完成",
+    "transform": "已转换",
+    "failed": "失败",
+    "skipped": "未执行",
+}
+
+
+def render_chain_executions_md(items: Iterable[Item]) -> list[str]:
+    rows = [(item.package_relative_path, execution) for item in items for execution in (item.chain_executions or [])]
+    if not rows:
+        return []
+
+    lines = [
+        f"## 解析链执行记录（{len(rows)} 条）",
+        "",
+        "| 文件 | 链 | 角色 | 状态 | 结果/原因 |",
+        "|------|----|------|------|-----------|",
+    ]
+    for path, execution in rows:
+        lines.append(
+            f"| `{path}` | `{execution['rule_id']}` | "
+            f"{_CHAIN_ROLE_LABEL.get(execution['role'], execution['role'])} | "
+            f"{_CHAIN_STATUS_LABEL.get(execution['status'], execution['status'])} | "
+            f"{_chain_execution_detail(execution)} |"
+        )
+    return lines
+
+
+def _chain_execution_detail(execution: dict) -> str:
+    details = []
+    if execution.get("worker"):
+        details.append(f"worker `{execution['worker']}`")
+    if execution.get("reason"):
+        details.append(f"原因 `{execution['reason']}`")
+    skipped_workers = execution.get("skipped_workers") or []
+    if skipped_workers:
+        details.append(
+            "未用 " + "、".join(f"`{row['worker']}`（{row['reason']}）" for row in skipped_workers)
+        )
+    fell_back = execution.get("fell_back") or []
+    if fell_back:
+        details.append("回退 " + " → ".join(f"`{row['name']}`（{row['reason']}）" for row in fell_back))
+    return "；".join(details) or "—"
+
 
 def render_manifest_md(m: PackageManifest) -> str:
     lines: list[str] = []
@@ -418,6 +466,11 @@ def render_manifest_md(m: PackageManifest) -> str:
         else:
             for p in entries:
                 lines.append(f"- `{p}`")
+        lines.append("")
+
+    chain_executions = render_chain_executions_md(m.items)
+    if chain_executions:
+        lines.extend(chain_executions)
         lines.append("")
 
     lines.append(f"## 全部条目（{len(m.items)}）")

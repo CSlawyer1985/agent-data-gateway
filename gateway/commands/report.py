@@ -5,7 +5,14 @@ from __future__ import annotations
 from collections import Counter
 from pathlib import Path
 
-from ..manifest import atomic_write_json, atomic_write_text, list_rendition_docs, load_manifest
+from ..manifest import (
+    atomic_write_json,
+    atomic_write_text,
+    list_rendition_docs,
+    load_manifest,
+    render_chain_executions_md,
+)
+from ..models import Item
 from ..quality import DIMENSIONS, FITNESS_KEYS, reliably_read_ids
 from ._common import out_hint, print_json, resolve_out_dir, summary_line
 
@@ -79,7 +86,7 @@ def run(args) -> int:
 
     reports_dir = out_dir / "reports"
     atomic_write_json(reports_dir / "report.json", report)
-    atomic_write_text(reports_dir / "report.md", _render_md(report))
+    atomic_write_text(reports_dir / "report.md", _render_md(report, manifest.items))
     if args.json:
         print_json(report)
     else:
@@ -95,7 +102,7 @@ def _rank(overall: str | None) -> int:
     return {"pass": 2, "pass_with_warnings": 1, "fail": 0, None: -1}[overall]
 
 
-def _render_md(report: dict) -> str:
+def _render_md(report: dict, items: list[Item]) -> str:
     lines = [
         f"# 摄取质量报告：{report['package_root_name']}",
         "",
@@ -124,6 +131,9 @@ def _render_md(report: dict) -> str:
     lines += ["", "## 适用性覆盖（按 item 最优 rendition）", "", "| 适用性 | 可用 item 数 |", "|--------|--------------|"]
     for k, n in report["fitness_coverage"].items():
         lines.append(f"| {fit_cn.get(k, k)} | {n} |")
+    chain_executions = render_chain_executions_md(items)
+    if chain_executions:
+        lines += [""] + chain_executions
     unresolved = report["unresolved_items"]
     if unresolved:
         lines += ["", f"## 未可靠读取与待办（{len(unresolved)}）", "", "| 文件 | 阶段 | 原因 | 建议 |", "|------|------|------|------|"]
