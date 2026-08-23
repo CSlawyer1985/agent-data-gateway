@@ -18,6 +18,32 @@ PreflightFn = Callable[[Path, Any], dict]
 _PREFLIGHTS: dict[str, PreflightFn] = {}
 
 
+PROFILES = ("fast", "balanced", "quality")
+DEFAULT_PROFILE = "balanced"
+
+
+@dataclass(frozen=True)
+class ParallelChain:
+    """可与某条规则并跑的另一条链。
+
+    requires_signal 是探测门控：该信号不是 present 就不跑——探测到没有图就不必
+    启动 OCR，这是成本控制里最大的一笔（spec 11 §6.1）。
+    """
+
+    rule_id: str
+    requires_signal: str | None = None
+
+
+@dataclass(frozen=True)
+class PlannedChain:
+    """一条计划执行的链。顺序只表示执行先后，不表示结果优劣（ADR 0005 决策 4）。"""
+
+    rule_id: str
+    workers: tuple[str, ...]
+    reason: str
+    parallel: bool = False  # False=首选链；True=并跑链
+
+
 @dataclass(frozen=True)
 class RouteRule:
     """一条可执行、可查询的路由规则；顺序即优先级。"""
@@ -30,6 +56,8 @@ class RouteRule:
     features: tuple[tuple[str, object], ...] = ()
     action: str = "parse"  # parse / expand / unresolved
     tools: tuple[str, ...] = ()  # 非 dispatcher worker，例如 stdlib 展开器
+    # 可与本规则并跑的其他链（ADR 0005）。跑不跑由 profile 决定，不是本规则说了算。
+    parallel_with: tuple["ParallelChain", ...] = ()
 
     def matches(self, kind: str, format_: str | None, features: dict) -> bool:
         if self.kind != kind:
@@ -79,6 +107,16 @@ ROUTE_RULES: tuple[RouteRule, ...] = (
         "pdf",
         "PDF 数字简单 → Docling 优先",
         ("docling", "pdfplumber", "pypdf", "pdf_lite"),
+        # 文字层链看不见图里的东西。探测到 page_images 时并跑视觉链，
+        # 让印章/手写/图内文字有机会被读到（ADR 0002 的原型场景）。
+        parallel_with=(ParallelChain("pdf-visual", requires_signal="page_images"),),
+    ),
+    # 只作并跑目标，不参与首条命中——排在 pdf 默认规则之后，resolve_rule 永远走不到这里。
+    RouteRule(
+        "pdf-visual",
+        "pdf",
+        "视觉视角：渲染页位图回灌 image 链做 OCR，读文字层看不到的印章与手写",
+        ("pdf_render",),
     ),
     RouteRule("email-eml", "email", "RFC 822/MIME 结构可直接解析正文与附件", ("eml_lite",), formats=("eml",)),
     RouteRule("email-msg", "email", "MSG 是 OLE Outlook 容器，需要专用属性流解析", ("extract_msg",), formats=("msg",)),
@@ -173,6 +211,45 @@ def resolve_chain(kind: str, format_: str | None, features: dict) -> tuple[list[
     return list(rule.workers), rule.reason
 
 
+def resolve_plan(
+    kind: str,
+    format_: str | None,
+    features: dict,
+    signals: dict | None = None,
+    *,
+    profile: str = DEFAULT_PROFILE,
+) -> tuple[list[PlannedChain], list[dict]]:
+    """按 profile 决定跑哪几条链，并返回被跳过的声明。
+
+    fast 只跑首选链；balanced / quality 追加规则声明的并跑链，逐条过信号门控。
+    第二个返回值是跳过记录——少跑必须显性，静默省略等同于假装跑过了（ADR 0005 决策 5）。
+    """
+    rule = resolve_rule(kind, format_, features)
+    if rule is None:
+        return [], []
+    plan = [PlannedChain(rule.rule_id, tuple(rule.workers), rule.reason)]
+    skipped: list[dict] = []
+    for candidate in rule.parallel_with:
+        target = next((r for r in ROUTE_RULES if r.rule_id == candidate.rule_id), None)
+        if target is None:
+            skipped.append({"rule_id": candidate.rule_id, "reason": "unknown_rule"})
+            continue
+        if profile == "fast":
+            skipped.append({"rule_id": candidate.rule_id, "reason": "profile_fast"})
+            continue
+        needed = candidate.requires_signal
+        if needed:
+            state = (signals or {}).get(needed, "unknown")
+            # balanced 只在信号确认在场时跑；quality 连 unknown 也跑——探测不到不等于
+            # 不存在，重点材料宁可多跑一次。absent 在任何档都不跑：确认没有图还去 OCR
+            # 是纯浪费，这正是探测门控省钱的地方（spec 11 §6.1）。
+            if not (state == "present" or (profile == "quality" and state == "unknown")):
+                skipped.append({"rule_id": candidate.rule_id, "reason": f"signal_{needed}_{state}"})
+                continue
+        plan.append(PlannedChain(target.rule_id, tuple(target.workers), target.reason, parallel=True))
+    return plan, skipped
+
+
 def _extensions_for_rule(rule: RouteRule, hints: list[dict[str, str | None]]) -> list[str]:
     claimed_formats = {
         format_name
@@ -211,6 +288,14 @@ def route_catalog(*, kind: str | None = None, format_: str | None = None) -> lis
             elif wanted != rule.kind:
                 continue
         feature_match = {key: value for key, value in rule.features}
+        # 谁会并跑本规则的链。只作并跑目标的规则不参与首条命中，若不说明，
+        # 它在总表里会显示成「默认」，读者会以为同一 kind 有两条默认规则。
+        parallel_from = [
+            {"rule_id": candidate.rule_id, "requires_signal": target.requires_signal}
+            for candidate in ROUTE_RULES
+            for target in candidate.parallel_with
+            if target.rule_id == rule.rule_id
+        ]
         rows.append(
             {
                 "priority": priority,
@@ -228,6 +313,10 @@ def route_catalog(*, kind: str | None = None, format_: str | None = None) -> lis
                 "workers": list(rule.workers),
                 "tools": list(rule.processing_tools),
                 "reason": rule.reason,
+                "parallel_from": parallel_from,
+                "parallel_with": [
+                    {"rule_id": t.rule_id, "requires_signal": t.requires_signal} for t in rule.parallel_with
+                ],
             }
         )
     return rows

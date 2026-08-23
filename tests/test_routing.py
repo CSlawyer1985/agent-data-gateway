@@ -103,12 +103,35 @@ class RoutingTableTest(unittest.TestCase):
             if rule.action == "parse":
                 self.assertTrue(rule.workers, rule.rule_id)
             if not rule.formats and not rule.features:
+                # 并跑目标规则（ADR 0005）不参与首条命中，被默认规则排在后面是设计如此。
+                # 判据用「是否被某条 parallel_with 引用」而不是自报标记：被引用是自动的，
+                # 而「标了只作并跑却没人引用」照样是死规则，必须仍被这条守卫抓到。
+                parallel_targets = {
+                    target.rule_id
+                    for candidate in routing.ROUTE_RULES
+                    for target in candidate.parallel_with
+                }
                 later_same_kind = [
                     candidate.rule_id
                     for candidate in routing.ROUTE_RULES[index + 1 :]
-                    if candidate.kind == rule.kind
+                    if candidate.kind == rule.kind and candidate.rule_id not in parallel_targets
                 ]
                 self.assertFalse(later_same_kind, f"{rule.rule_id} 会遮蔽 {later_same_kind}")
+
+    def test_shadowing_check_still_catches_a_truly_dead_rule(self) -> None:
+        """上一条放行了并跑目标，这条证明它没被放宽成摆设。
+
+        植入一条既不会被首条命中、也没有任何 parallel_with 引用的规则——
+        它必须仍被判为遮蔽。
+        """
+        dead = routing.RouteRule("probe-dead-rule", "pdf", "测试用", ("pypdf",))
+        original = routing.ROUTE_RULES
+        routing.ROUTE_RULES = original + (dead,)
+        try:
+            with self.assertRaises(AssertionError):
+                self.test_rules_have_unique_ids_valid_actions_and_no_shadowing()
+        finally:
+            routing.ROUTE_RULES = original
 
     def test_archive_support_is_explicit(self) -> None:
         rows = {row["rule_id"]: row for row in routing.route_catalog(kind="archive")}

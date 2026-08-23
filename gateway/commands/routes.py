@@ -21,7 +21,16 @@ def _condition(row: dict) -> str:
         parts.append("format=" + "/".join(formats))
     for key, value in row["when"]["features"].items():
         parts.append(f"{key}={value}")
-    return ", ".join(parts) if parts else "默认"
+    if parts:
+        return ", ".join(parts)
+    triggers = row.get("parallel_from") or []
+    if triggers:
+        by = "、".join(
+            t["rule_id"] + (f"（需 {t['requires_signal']}）" if t.get("requires_signal") else "")
+            for t in triggers
+        )
+        return f"仅并跑 ← {by}"
+    return "默认"
 
 
 def run(args) -> int:
