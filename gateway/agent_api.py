@@ -35,6 +35,13 @@ from .quality import best_quality_rank, reliably_read_ids
 # 改了字段语义才递增，让下游有可判定的兼容依据（spec 10）。
 AGENT_API_VERSION = "1"
 
+# extraction_coverage 极易被读成「信息提取了多少」。它是文件级的，与文件内的
+# 利用率（spec 11）正交；两个百分比并列时 Agent 必须分得开（ADR 0003 决策 7）。
+COVERAGE_MEANING = (
+    "文件级完整性：多少份材料被可靠读取。不是文件内信息的利用率——"
+    "一份扫描件的文字层读到了，图里的印章与手写签名仍可能没提取。"
+)
+
 _HEX_RE = re.compile(r"^[0-9a-f]{8,64}$")
 
 MAX_ELEMENTS_DEFAULT = 200
@@ -183,6 +190,7 @@ class PackageView:
             "package_id": self.manifest.package_id,
             "overall": quality.get("overall"),
             "extraction_coverage": quality.get("extraction_coverage"),
+            "extraction_coverage_meaning": COVERAGE_MEANING,
             "all_items_accounted": self.manifest.integrity.get("all_items_accounted", False),
             "total_items": len(self.manifest.items),
             "by_status": dict(sorted(by_status.items())),

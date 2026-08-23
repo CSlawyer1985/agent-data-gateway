@@ -203,6 +203,11 @@ ADG 是**给 Agent 用的命令行工具**：Claude Code 等 Agent 经 Bash 调�
 也不试图让 Agent 自动发现自己。需要用它的人自己让 Agent 去跑 `adg`——工具负责在被调用时给出诚实结果，
 不负责推销自己（[ADR 0003](docs/adr/0003-distribution-and-target-runtime.md) 决策 6）。
 
+**但被调用之后必须能被读懂**——被误读的诚实结果不是诚实结果。`adg --help` 因此承载三件事：
+典型流程顺序、退出码三态（**`1` 是「完成但有未读全项」，不是失败**，而它是常态）、
+以及检索范围只覆盖已可靠读取的材料。这些承诺由测试与真实退出码绑定，不允许漂移
+（[ADR 0003](docs/adr/0003-distribution-and-target-runtime.md) 决策 7）。
+
 ## 目录结构
 
 ```

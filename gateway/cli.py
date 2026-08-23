@@ -29,10 +29,28 @@ from .commands import (
 from .errors import ADGError
 
 
+AGENT_NOTES = """
+典型流程：
+  adg scan <包>             全量发现，建清单（不解析内容）
+  adg parse <包>            解析并建检索索引
+  adg search <包> <词>      检索，命中带来源锚点
+
+退出码：0=全部可靠读取   1=完成但有未读全项（不是失败）   2=失败
+
+检索范围只覆盖已可靠读取的材料——"没搜到"不等于"不存在"。查询结果的 JSON 里
+带 coverage_caveat，说明还有多少材料不在范围内；extraction_coverage 是
+文件级完整性（多少份材料读到了），不是文件内信息的利用率。
+"""
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="adg",
         description="Agent Data Gateway — 让 Agent 获得可信、完整、可追溯的数据输入。",
+        # 调用方是编码 Agent，--help 是它接触本工具的第一动作（ADR 0003 决策 7）：
+        # 退出码语义、流程顺序与检索范围警告只有写在这里才到得了它眼前。
+        epilog=AGENT_NOTES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     p.add_argument("--version", action="version", version=f"adg {__version__}")
     sub = p.add_subparsers(dest="command", required=True)
