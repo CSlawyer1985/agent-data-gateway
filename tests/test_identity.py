@@ -29,7 +29,6 @@ class IdentityTest(unittest.TestCase):
         self.assertEqual(package_id_of(ids), package_id_of(list(reversed(ids))))
 
     def test_canonical_json_stable(self):
-        import json
 
         a = canonical_json({"b": 1, "a": 2})
         b = canonical_json({"a": 2, "b": 1})

@@ -166,7 +166,6 @@ class Dispatcher:
     def _finalize_container_item(self, it: Item) -> None:
         # 损坏/加密/拦截的压缩包 → unresolved
         corrupted = set(self.manifest.quality.get("corrupted", []))
-        encrypted = set(self.manifest.quality.get("encrypted", []))
         unresolved_sids = {u.get("source_id") for u in self.manifest.integrity.get("unresolved_items", [])}
         if it.package_relative_path in corrupted or it.source_id in unresolved_sids:
             it.status = "unresolved"
@@ -209,7 +208,6 @@ class Dispatcher:
             self._mark_unresolved(item, f"该类型（{item.kind}/{item.format or '-'}）无解析链（{route_reason}）", stage="parse")
             return []
         fell_back: list[dict] = []
-        last_error = ""
         all_produced: list[Item] = []
         transform_done = False
         for worker_name in chain:
@@ -217,12 +215,10 @@ class Dispatcher:
             if w is None:
                 detail = f"worker {worker_name} 未注册"
                 fell_back.append({"name": worker_name, "version": "-", "reason": "unavailable", "detail": detail})
-                last_error = detail
                 continue
             ok, reason = self.registry.availability(w, self.env)
             if not ok:
                 fell_back.append({"name": w.name, "version": w.version, "reason": "unavailable", "detail": reason})
-                last_error = reason
                 continue
             request = {
                 "protocol_version": "0.1",
@@ -244,20 +240,17 @@ class Dispatcher:
             except WorkerUnavailable as e:
                 detail = str(e)
                 fell_back.append({"name": w.name, "version": w.version, "reason": "unavailable", "detail": detail})
-                last_error = detail
                 self._cleanup_work(work_dir)
                 continue
             except Exception as e:
                 detail = f"{type(e).__name__}: {e}"
                 fell_back.append({"name": w.name, "version": w.version, "reason": "error", "detail": detail})
-                last_error = detail
                 self._cleanup_work(work_dir)
                 continue
             if result.get("status") != "ok":
                 fb = routing.fallback_reason_from_result(result, available=True)
                 detail = fb.get("detail") or "worker 执行失败"
                 fell_back.append({"name": w.name, "version": w.version, "reason": fb["reason"], "detail": detail})
-                last_error = detail
                 self._cleanup_work(work_dir)
                 continue
             # transform worker（dwg→dxf、dwg→渲染图、视频→抽帧 等）：产 output_files 不产 fragment
@@ -282,7 +275,6 @@ class Dispatcher:
             if not isinstance(fragment, dict):
                 detail = "worker 返回空片段"
                 fell_back.append({"name": w.name, "version": w.version, "reason": "error", "detail": detail})
-                last_error = detail
                 self._cleanup_work(work_dir)
                 continue
             try:
@@ -290,7 +282,6 @@ class Dispatcher:
             except Exception as e:
                 detail = f"片段定稿失败: {type(e).__name__}: {e}"
                 fell_back.append({"name": w.name, "version": w.version, "reason": "error", "detail": detail})
-                last_error = detail
                 self._cleanup_work(work_dir)
                 continue
             produced = self._after_success(item, doc, fragment, work_dir, w)

@@ -132,7 +132,6 @@ def preflight_pdf(source_path: Path, detected=None) -> dict:
         n, _ = _extract_text_from_content(data)
         text_total += n
     sampled_streams = max(1, len(streams))
-    text_per_stream = text_total / sampled_streams
     features["sampled_streams"] = sampled_streams
     features["sampled_text_bytes"] = text_total
 

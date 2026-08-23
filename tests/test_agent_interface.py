@@ -359,7 +359,6 @@ class StaleIndexDegradationTest(unittest.TestCase):
 
     def test_missing_index_under_lock_still_fails_loudly(self):
         """既有索引都没有时无话可说，必须失败而不是假装查过。"""
-        import tempfile
         from gateway.errors import ADGError
         from gateway.index import index_path
         from gateway.manifest import OutputWriteLock

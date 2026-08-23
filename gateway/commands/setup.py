@@ -12,7 +12,6 @@ python 依赖类：建 workers/<name>/.venv 并 pip install。
 
 from __future__ import annotations
 
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -21,7 +20,7 @@ from .. import mirrors
 from ..gap import analyze_manifest_gaps
 from ..hardware import detect_environment
 from ..manifest import load_manifest
-from ._common import build_registry, out_hint, resolve_out_dir, summary_line
+from ._common import build_registry, resolve_out_dir, summary_line
 
 PIP_INDEX_ENV = mirrors.PIP_INDEX_ENV
 

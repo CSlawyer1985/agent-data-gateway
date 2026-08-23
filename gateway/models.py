@@ -26,22 +26,6 @@ def new_run_id() -> str:
 # ---------- 元素与内容块 ----------
 
 
-def make_element(element_id: str, type_: str, locator: dict, text: str | None = None, attrs: dict | None = None) -> dict:
-    el: dict[str, Any] = {"id": element_id, "type": type_, "locator": locator}
-    if text is not None:
-        el["text"] = text
-    if attrs:
-        el["attrs"] = attrs
-    return el
-
-
-def make_block(block_type: str, index: int, elements: list[dict], label: str | None = None) -> dict:
-    b: dict[str, Any] = {"block_type": block_type, "index": index, "elements": elements}
-    if label is not None:
-        b["label"] = label
-    return b
-
-
 # ---------- EvidenceDocument ----------
 
 

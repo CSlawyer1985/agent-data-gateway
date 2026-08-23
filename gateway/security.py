@@ -211,20 +211,7 @@ def resolve_worker_output(work_dir: Path, untrusted_path: str, *, require_file: 
     return target
 
 
-# ---- 活动内容与可执行文件检测 ----
-
-_EXECUTABLE_MIMES = {
-    "application/x-msdownload",
-    "application/x-executable",
-    "application/x-mach-binary",
-    "application/x-elf",
-    "application/x-dosexec",
-}
-
-
-def is_executable_mime(mime: str) -> bool:
-    return mime in _EXECUTABLE_MIMES
-
+# ---- 活动内容检测 ----
 
 def detect_office_macros(zip_names: list[str]) -> bool:
     """OOXML 包内存在 vbaProject.bin 即视为含宏。"""

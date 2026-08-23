@@ -14,7 +14,6 @@ from ..hardware import detect_environment
 from ..manifest import MANIFEST_MD, OutputWriteLock, atomic_write_text, load_manifest, render_manifest_md, save_manifest
 from ..models import now_iso
 from ..privacy import RunLog
-from ..workers import WorkerRegistry
 from ._common import build_registry, out_hint, print_json, resolve_out_dir, summary_line
 
 

@@ -7,9 +7,7 @@ fixtures 同时被 tests/ 单元测试复用。矩阵对应 plan §16：
 
 from __future__ import annotations
 
-import base64
 import io
-import json
 import struct
 import tempfile
 import zipfile
@@ -175,7 +173,7 @@ def make_zip_symlink() -> bytes:
     return buf.getvalue()
 
 
-def make_zip_bomb(ratio_target: int = 300) -> bytes:
+def make_zip_bomb() -> bytes:
     buf = io.BytesIO()
     payload = b"\x00" * (12 * 1024 * 1024)  # 12MB 零字节，压缩率 >300:1
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
@@ -363,7 +361,7 @@ def run_matrix(work_root: Path | None = None, *, keep: bool = False) -> MatrixRe
     from .dispatcher import Dispatcher, ParseOptions
     from .hardware import detect_environment
     from .inventory import build_manifest, recompute_package_quality
-    from .manifest import documents_dir, list_rendition_docs, load_manifest, rendition_json_path, save_manifest
+    from .manifest import documents_dir, list_rendition_docs, load_manifest, save_manifest
     from .privacy import contains_absolute_path
     from .workers import WorkerInfo, WorkerRegistry, run_subprocess_protocol
     from packs.legal import chat_kind_refiner, pdf_lite
@@ -450,7 +448,7 @@ def run_matrix(work_root: Path | None = None, *, keep: bool = False) -> MatrixRe
 
     # ---------- parse ----------
     dispatcher = Dispatcher(package_dir, out_dir, manifest, registry, env=env, options=ParseOptions(force=True, no_abs_log=True))
-    summary1 = dispatcher.run()
+    dispatcher.run()
     manifest = load_manifest(out_dir)
 
     def doc_of(rel_path: str) -> dict | None:

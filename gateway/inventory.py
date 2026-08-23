@@ -5,7 +5,6 @@ parse 阶段也复用本模块把 rendition/状态回写 manifest。
 
 from __future__ import annotations
 
-from pathlib import Path
 
 from . import magic
 from .discover import DiscoveryResult

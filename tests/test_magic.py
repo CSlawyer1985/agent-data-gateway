@@ -17,7 +17,6 @@ from tests.fixtures import (
     make_png,
     make_wav,
     make_xlsx,
-    make_zip_bomb,
     make_zip_normal,
     make_zip_traversal,
 )

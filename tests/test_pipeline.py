@@ -90,7 +90,7 @@ class EndToEndTest(unittest.TestCase):
         self.assertIn(enc_item.status, ("unresolved", "failed"))
 
     def test_no_absolute_path_leak(self):
-        m = self._full_pipeline()
+        self._full_pipeline()
         leaks = []
         for p in self.out.rglob("*"):
             if not p.is_file() or "logs" in p.parts:

@@ -7,13 +7,11 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from . import magic, routing
 from .hardware import Environment, check_requirements
-from .manifest import load_manifest
 from .models import PackageManifest
-from .workers import WorkerInfo, WorkerRegistry
+from .workers import WorkerRegistry
 
 
 @dataclass

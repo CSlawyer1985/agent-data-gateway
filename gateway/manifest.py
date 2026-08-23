@@ -109,10 +109,6 @@ def default_out_dir(package_root: Path) -> Path:
     return base / (name + "（ADG）")
 
 
-def is_adg_output_name(name: str) -> bool:
-    """识别 ADG 输出目录/文件名（防止对父目录跑时把输出当材料扫入）。"""
-    return name.endswith("（ADG）") or name.endswith("(ADG)")
-
 
 def atomic_write_text(path: Path, text: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)

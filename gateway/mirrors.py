@@ -96,17 +96,6 @@ def _write_cache(data: dict) -> None:
     except OSError:
         pass  # 缓存写不了不影响功能，下次重测即可
 
-
-def clear_cache() -> bool:
-    try:
-        cache_path().unlink()
-        return True
-    except FileNotFoundError:
-        return False
-    except OSError:
-        return False
-
-
 def _probe_one(name: str, url: str, timeout: float, attempts: int = PROBE_ATTEMPTS) -> Probe:
     """测到首字节的耗时，取 attempts 次最小值（单次抖动可达 2 倍）。只读 1 字节就断开。"""
     request = urllib.request.Request(url + "/", headers={"User-Agent": "adg-mirror-probe"})

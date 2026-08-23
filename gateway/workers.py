@@ -16,11 +16,10 @@ import queue
 import shutil
 import subprocess
 import sys
-import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, Callable
+from typing import Callable
 
 from . import PROTOCOL_VERSION
 from .errors import ContractViolation, SecurityViolation, WorkerFailed, WorkerUnavailable
@@ -608,6 +607,3 @@ def make_work_dir(base: Path, job_id: str) -> Path:
     d.mkdir(parents=True, exist_ok=True)
     return d
 
-
-def temp_work_dir() -> Path:
-    return Path(tempfile.mkdtemp(prefix="adg-worker-"))

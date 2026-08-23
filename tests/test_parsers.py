@@ -7,7 +7,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-from gateway import anchor, magic, quality
+from gateway import anchor
 from gateway.errors import WorkerFailed
 from tests.fixtures import (
     make_chat_whatsapp,
@@ -21,7 +21,6 @@ from tests.fixtures import (
     make_png,
     make_wav,
     make_xlsx,
-    make_zip_normal,
 )
 from packs.legal import chat_lite, csv_lite, doc_lite, docx_lite, dxf_lite, eml_lite, html_lite, image_lite, pdf_lite, pptx_lite, text_lite, xlsx_lite
 

@@ -80,7 +80,3 @@ def package_id_of(source_ids: list[str]) -> str:
     joined = "\n".join(sorted(source_ids))
     return "sha256:" + sha256_text(joined)
 
-
-def config_hash_of(options: dict) -> str:
-    """parser 生效配置指纹（取前 16 位展示用）。"""
-    return sha256_text(canonical_json(options))[:16]
