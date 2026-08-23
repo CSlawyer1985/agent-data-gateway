@@ -140,20 +140,49 @@ adg check                        # 验证这些 worker 在当前机器是否真�
 
 ## 安装
 
+推荐把 ADG 作为独立命令行工具安装，避免和项目里的 Python 依赖互相影响：
+
 ```bash
-pip install agent-data-gateway   # 编排器 + Core（纯 stdlib，零硬依赖）
-adg setup --auto                 # 一条命令：自动选最快的源 + 装齐免系统依赖的 worker + 预下模型
+uv tool install agent-data-gateway
+adg --version
 ```
 
-`adg setup --auto` 做三件事，不需要你懂任何一项：
+没有安装 `uv` 也可以直接使用 `pip`：
+
+```bash
+python3 -m pip install agent-data-gateway
+```
+
+包已发布到 [PyPI](https://pypi.org/project/agent-data-gateway/)。上面安装的是编排器和零硬依赖的 Core；
+要启用更多文件格式，再执行：
+
+```bash
+adg setup --auto
+adg check
+```
+
+`adg setup --auto` 会自动完成两件事：
 
 1. **自动选线路**——并发测速 pypi 官方 / 清华 / 阿里 / 腾讯 / 中科大，选最快的那个（结果缓存 7 天）。
    直连官方就用官方，不硬塞镜像。显式 `--index-url` 或环境变量 `ADG_PIP_INDEX_URL` 永远优先。
 2. **只装该装的**——收无系统依赖、体积可接受的 worker；需要 Docker 或数 GB 模型的（docling/mineru/paddleocr/whisper）
    不进一键档，装完会告诉你它们各自的一行安装命令。准入写在各 `worker.json` 的 `auto_install`，不是代码里的硬编码名单。
-3. **模型在安装阶段下好**——whisper 等 worker 声明 `network: false`，但模型是首次运行才下载的。
-   预热让那句声明成真；下载走自动选出的镜像（`HF_ENDPOINT`），线路全不通时直接给出 ModelScope 手动路径，
-   而不是让你第一次解析音视频时莫名卡住。
+
+### 模型会自动安装吗？
+
+**分情况，不会在安装 CLI 时把所有模型都下载下来。**
+
+- `uv tool install` / `pip install` 只安装 ADG Core，不下载模型。
+- `adg setup --auto` 安装轻量自动档 worker；其中 RapidOCR 的模型随依赖包一起安装，无需首次运行再联网下载。
+- Whisper、PaddleOCR、Docling、MinerU 等重型 worker 默认不进自动档，需要时再按提示显式安装。
+- 对声明了模型预取步骤的 worker（目前包括 Whisper、PaddleOCR），执行 `adg setup --worker <名称>`，并备齐 FFmpeg 等系统依赖后，
+  ADG 会自动预取模型；加 `--no-models` 可以跳过。若预取失败，ADG 会明确警告，并在首次解析时重试。
+
+例如，需要音视频转写时再安装 Whisper：
+
+```bash
+adg setup --worker whisper
+```
 
 装完会打印一张「本机现在能读什么、还差什么、缺的那个怎么补」的表——**装到什么程度，就诚实报到什么程度**。
 
@@ -167,7 +196,7 @@ adg setup --auto                 # 一条命令：自动选最快的源 + 装齐
 ## 快速开始
 
 ```bash
-adg setup --auto             # 一键装齐（自动选源 + 预下模型），不熟命令行就用这个
+adg setup --auto             # 自动选源 + 安装轻量自动档 worker
 adg check                    # 环境检测：Python/容器/GPU + 各 worker 可用性
 adg routes                   # 总路由表：格式 → 条件 → 工具 → 原因
 # adg setup --worker whisper # 按需单装重型 worker（音视频转写）
