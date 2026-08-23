@@ -238,6 +238,8 @@ agent-data-gateway/
 
 `docs/spec/` 下 00-11 是权威说明；`models/*.v0.1.json` 是机器可读 Schema（normative，冲突时以 Schema 为准）。
 
+做到哪了、接着做什么，见 [`docs/roadmap.md`](docs/roadmap.md)（含开发环境与几个已知的坑）。
+
 架构决策记录在 `docs/adr/`——**读这个项目（人或 AI）应先看这三份，它们解释了「为什么是这样」**：
 
 | ADR | 决定了什么 |
