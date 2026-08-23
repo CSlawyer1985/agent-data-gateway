@@ -44,6 +44,8 @@ class ParseOptions:
     keep_work: bool = False
     worker_options: dict = field(default_factory=dict)
     chain_override: dict[str, list[str]] = field(default_factory=dict)  # kind → 强制链
+    # 跑几条链由调用方选，ADG 不替它判断需要多少（ADR 0005 决策 3）
+    profile: str = routing.DEFAULT_PROFILE
 
 
 @dataclass
@@ -200,17 +202,68 @@ class Dispatcher:
         detected = self._detected_of(item)
         features = routing.preflight(item.kind, path, detected)
         if item.kind in self.options.chain_override:
-            chain = list(self.options.chain_override[item.kind])
-            route_reason = f"强制链（chain_override）: {' → '.join(chain)}"
+            forced = tuple(self.options.chain_override[item.kind])
+            plan = [routing.PlannedChain("chain-override", forced, f"强制链（chain_override）: {' → '.join(forced)}")]
+            skipped: list[dict] = []
         else:
-            chain, route_reason = routing.resolve_chain(item.kind, item.format, features)
-        if not chain:
-            self._mark_unresolved(item, f"该类型（{item.kind}/{item.format or '-'}）无解析链（{route_reason}）", stage="parse")
+            plan, skipped = routing.resolve_plan(
+                item.kind, item.format, features, item.signals, profile=self.options.profile
+            )
+        if not plan:
+            self._mark_unresolved(item, f"该类型（{item.kind}/{item.format or '-'}）无解析链", stage="parse")
             return []
-        fell_back: list[dict] = []
+        executions: list[dict] = [
+            {"rule_id": row["rule_id"], "role": "parallel", "status": "skipped", "reason": row["reason"]}
+            for row in skipped
+        ]
         all_produced: list[Item] = []
+        got_content = False
+        primary: dict = {}
+        for planned in plan:
+            outcome = self._run_chain(item, path, planned, features)
+            all_produced.extend(outcome["produced"])
+            executions.append(
+                {
+                    "rule_id": planned.rule_id,
+                    "role": "parallel" if planned.parallel else "primary",
+                    "status": outcome["status"],
+                    "worker": outcome["worker"],
+                    # detail 来自 worker 异常消息，可能含绝对路径；落盘前 scrub（spec 09）
+                    "fell_back": [_scrub_fallback(fb) for fb in outcome["fell_back"]],
+                }
+            )
+            if outcome["status"] in ("ok", "transform"):
+                got_content = True
+            if not planned.parallel:
+                primary = outcome
+        item.chain_executions = executions
+        if got_content:
+            return all_produced
+        # 全部链失败：按链顺序输出每一级的失败原因，避免只留链尾误导排障。
+        # detail 可能含 worker 异常消息里的绝对路径，落盘前 scrub（隐私：产物只出现包内相对路径）。
+        fell_back = primary.get("fell_back", [])
+        chain_desc = " → ".join(
+            f"{fb['name']}: {scrub_text((fb.get('detail') or fb['reason']))[:160]}"
+            for fb in fell_back
+        )
+        reason_text = f"所有候选 parser 失败/不可用（{plan[0].reason}）。失败链: {chain_desc}"
+        if any(fb["reason"] == "unavailable" for fb in fell_back):
+            reason_text += "。建议: adg setup --worker " + next(
+                (fb["name"] for fb in fell_back if fb["reason"] == "unavailable"), plan[0].workers[0]
+            )
+        self._mark_unresolved(item, reason_text, stage="parse", fell_back=fell_back)
+        return all_produced
+
+    def _run_chain(self, item: Item, path: Path, planned: routing.PlannedChain, features: dict) -> dict:
+        """跑一条链：链内先成功先得（spec 08 降级纪律不变）。
+
+        只返回本条链的结果，不改 item 状态——多条链的汇总定稿在 _parse_item。
+        链内回退记 fell_back；链**之间**的成败是另一回事，由调用方记进执行记录。
+        """
+        fell_back: list[dict] = []
+        produced_items: list[Item] = []
         transform_done = False
-        for worker_name in chain:
+        for worker_name in planned.workers:
             w = self.registry.get(worker_name)
             if w is None:
                 detail = f"worker {worker_name} 未注册"
@@ -260,8 +313,8 @@ class Dispatcher:
                 and not result.get("fragment_path")
                 and result.get("output_files")
             ):
-                produced = self._after_transform(item, result, work_dir, w, route_reason, started)
-                all_produced.extend(produced)
+                produced = self._after_transform(item, result, work_dir, w, planned.reason, started)
+                produced_items.extend(produced)
                 transform_done = True
                 self._cleanup_work(work_dir)
                 continue
@@ -278,30 +331,20 @@ class Dispatcher:
                 self._cleanup_work(work_dir)
                 continue
             try:
-                doc = self._finalize_document(item, w, fragment, fell_back, features, route_reason, started)
+                doc = self._finalize_document(item, w, fragment, fell_back, features, planned.reason, started)
             except Exception as e:
                 detail = f"片段定稿失败: {type(e).__name__}: {e}"
                 fell_back.append({"name": w.name, "version": w.version, "reason": "error", "detail": detail})
                 self._cleanup_work(work_dir)
                 continue
             produced = self._after_success(item, doc, fragment, work_dir, w)
-            all_produced.extend(produced)
+            produced_items.extend(produced)
             self._cleanup_work(work_dir)
-            return all_produced  # parse 成功 → 内容 rendition 已得，结束
-        # 链尽：若有 transform 成功（如 dwg 转出了 dxf/渲染图），原件标 parsed，派生物已入队
+            self._cleanup_work(work_dir)
+            return {"status": "ok", "produced": produced_items, "fell_back": fell_back, "worker": w.name}
         if transform_done:
-            return all_produced
-        # 全部候选失败：按链顺序输出每一级的失败原因，避免只留链尾误导排障。
-        # detail 可能含 worker 异常消息里的绝对路径，落盘前 scrub（隐私：产物只出现包内相对路径）。
-        chain_desc = " → ".join(
-            f"{fb['name']}: {scrub_text((fb.get('detail') or fb['reason']))[:160]}"
-            for fb in fell_back
-        )
-        reason_text = f"所有候选 parser 失败/不可用（{route_reason}）。失败链: {chain_desc}"
-        if any(fb["reason"] == "unavailable" for fb in fell_back):
-            reason_text += "。建议: adg setup --worker " + next((fb["name"] for fb in fell_back if fb["reason"] == "unavailable"), chain[0])
-        self._mark_unresolved(item, reason_text, stage="parse", fell_back=fell_back)
-        return all_produced
+            return {"status": "transform", "produced": produced_items, "fell_back": fell_back, "worker": None}
+        return {"status": "failed", "produced": produced_items, "fell_back": fell_back, "worker": None}
 
     def _detected_of(self, item: Item) -> Any:
         dt = item.detected_type or {}
@@ -739,6 +782,12 @@ class Dispatcher:
             lines.append(f"| `{scrub_text(r['rel'])}` | {r['kind']} | {r['status']}{note_txt} | {reliable} | {parser} | {md} |")
         lines.append("")
         (self.out_dir / "对照索引.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _scrub_fallback(fb: dict) -> dict:
+    """回退记录落盘前去掉绝对路径。产物里只应出现包内相对路径（spec 09）。"""
+    detail = fb.get("detail")
+    return {**fb, "detail": scrub_text(detail)[:200]} if detail else dict(fb)
 
 
 def _item_note(it) -> str:

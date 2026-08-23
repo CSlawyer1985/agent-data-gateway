@@ -99,7 +99,8 @@ class Item:
     best_quality: str | None = None
     errors: list[str] | None = None
     detected_type: dict | None = None  # scan 阶段识别结果，供 parse 路由复用
-    signals: dict | None = None  # scan 阶段信号探测结果（spec 11），利用率的分母
+    signals: dict | None = None  # scan 阶段信号探测结果（spec 11）
+    chain_executions: list | None = None  # 每条链跑了没有、结果如何（ADR 0005 决策 5）
     mtime: str | None = None
 
     def to_manifest_entry(self) -> dict:
@@ -121,6 +122,8 @@ class Item:
             entry["detected_type"] = self.detected_type
         if self.signals is not None:
             entry["signals"] = self.signals
+        if self.chain_executions is not None:
+            entry["chain_executions"] = self.chain_executions
         if self.mtime is not None:
             entry["mtime"] = self.mtime
         return entry
@@ -141,6 +144,7 @@ class Item:
             errors=entry.get("errors"),
             detected_type=entry.get("detected_type"),
             signals=entry.get("signals"),
+            chain_executions=entry.get("chain_executions"),
             mtime=entry.get("mtime"),
         )
 

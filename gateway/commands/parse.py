@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from .. import routing
 from ..dispatcher import Dispatcher, ParseOptions
 from ..errors import ADGError
 from ..index import build_index
@@ -22,6 +23,13 @@ def build(sub) -> None:
     p.add_argument("--keep-work", action="store_true", help="保留 worker 临时目录（排障用）")
     p.add_argument("--worker-option", action="append", default=[], help="worker 选项 k=v（可多次），如 password=xxx")
     p.add_argument("--chain", action="append", default=[], help="强制解析链 kind=w1,w2（可多次），跳过特征路由")
+    p.add_argument(
+        "--profile",
+        choices=routing.PROFILES,
+        default=routing.DEFAULT_PROFILE,
+        help="跑几条链：fast 只跑首选；balanced 探测到信号才并跑；quality 探测不确定也跑。"
+             "ADG 不判断哪条结果更好，多跑只是多给你几份材料",
+    )
     p.add_argument("--no-index", action="store_true", help="解析后不建检索索引（之后可单独 adg index）")
     p.add_argument("--json", action="store_true", help="完整 JSON 输出")
     p.set_defaults(handler=run)
@@ -62,6 +70,7 @@ def run(args) -> int:
         keep_work=args.keep_work,
         worker_options=_parse_worker_options(args.worker_option),
         chain_override=_parse_chain_override(args.chain),
+        profile=args.profile,
     )
     dispatcher = Dispatcher(package_path, out_dir, manifest, registry, env=get_env(), options=options)
     summary = dispatcher.run()

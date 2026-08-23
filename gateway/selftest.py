@@ -51,6 +51,16 @@ def make_pdf_digital(text: bytes = b"Agent Data Gateway digital text layer sampl
     return _pdf(objs)
 
 
+def make_pdf_digital_with_image() -> bytes:
+    """文字层与图像并存的数字 PDF——ADR 0002 的原型场景。
+
+    文字层链读得到正文，却永远看不到图里的印章与手写；探测到 page_images 时
+    并跑视觉链，正是为这种材料准备的（ADR 0005）。
+    """
+    raw = make_pdf_digital()
+    return raw.replace(b"%%EOF", b"6 0 obj<</Subtype /Image /Width 8 /Height 8>>endobj\n%%EOF")
+
+
 def make_pdf_scanned() -> bytes:
     content = zlib.compress(b"q 612 0 0 792 0 0 cm /Im1 Do Q")
     image = b"\xff\xff\xff"  # 1x1 RGB 原始像素

@@ -403,6 +403,37 @@
                 "unknown"
               ]
             }
+          },
+          "chain_executions": {
+            "type": "array",
+            "description": "每条计划链的执行结果（ADR 0005 决策 5）：跑了没有、成功与否、被 profile 或探测门控跳过的原因。少跑必须显性——静默省略等同于假装跑过了。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "rule_id": {
+                  "type": "string"
+                },
+                "role": {
+                  "enum": [
+                    "primary",
+                    "parallel"
+                  ]
+                },
+                "status": {
+                  "enum": [
+                    "ok",
+                    "transform",
+                    "failed",
+                    "skipped"
+                  ]
+                }
+              },
+              "required": [
+                "rule_id",
+                "role",
+                "status"
+              ]
+            }
           }
         }
       }
