@@ -30,6 +30,23 @@ from .security import load_policy, resolve_worker_output
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+# 可写状态根。清单与 adapter 随包只读分发，venv 必须落在包外：
+# uv tool/pipx 升级会重建环境，装在 site-packages 里的 worker 依赖会连带丢失。
+ADG_HOME = Path(os.environ.get("ADG_HOME") or (Path.home() / ".adg"))
+
+
+def worker_venv_dir(name: str, manifest_path: Path | None, venv_name: str = ".venv") -> Path | None:
+    """worker venv 的落点：清单旁已有则沿用，否则落在 ADG_HOME/workers/<name>/。"""
+    if manifest_path is None:
+        return None
+    existing = manifest_path.parent / venv_name
+    return existing if existing.is_dir() else ADG_HOME / "workers" / name / venv_name
+
+
+def venv_python_of(venv_dir: Path) -> Path:
+    return venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+
+
 # 解析函数签名：(source_path: Path, *, kind: str, format: str|None, options: dict,
 #                 limits: dict, work_dir: Path) -> fragment dict
 LiteParseFn = Callable[..., dict]
@@ -66,6 +83,11 @@ class WorkerInfo:
     @property
     def worker_id(self) -> str:
         return f"{self.backend}:{self.name}"
+
+    @property
+    def venv_dir(self) -> Path | None:
+        """venv 根目录（venv_python 是 <venv>/bin/python 或 <venv>/Scripts/python.exe）。"""
+        return self.venv_python.parent.parent if self.venv_python else None
 
 
 class WorkerRegistry:
@@ -113,6 +135,7 @@ class WorkerRegistry:
         sub = spec.get("subprocess") or {}
         dock = spec.get("docker") or {}
         backend = "docker" if dock.get("image") else "subprocess"
+        venv_dir = worker_venv_dir(spec["name"], manifest_path, sub.get("venv", ".venv")) if sub else None
         return WorkerInfo(
             name=spec["name"],
             version=spec.get("version", "0.0.0"),
@@ -127,7 +150,7 @@ class WorkerRegistry:
             auto_install=spec.get("auto_install"),
             notes=spec.get("notes", ""),
             adapter_path=(manifest_path.parent / sub.get("adapter", "adapter.py")) if sub else None,
-            venv_python=(manifest_path.parent / sub.get("venv", ".venv") / ("Scripts/python.exe" if os.name == "nt" else "bin/python")) if sub else None,
+            venv_python=venv_python_of(venv_dir) if venv_dir else None,
             python_requires=spec.get("python_requires", []),
             probe_import=(sub.get("probe_import") if sub else None),
             probe_command=(sub.get("probe_command") if sub else None),

@@ -171,7 +171,7 @@ def _prefetch_models(registry, env, only: set[str] | None = None) -> None:
         print(f"  ⚠️ {mirrors.MODELSCOPE_HINT}")
         return
     for w, prefetch in targets:
-        venv_python = w.manifest_path.parent / (".venv/Scripts/python.exe" if sys.platform == "win32" else ".venv/bin/python")
+        venv_python = w.venv_python
         if not venv_python.is_file():
             continue
         size = prefetch.get("approx_size") or "未知大小"
@@ -274,10 +274,10 @@ def _install_targets(targets, dry_run: bool, yes: bool, index_url: str | None = 
         return 0
     failures: list[str] = []
     for w in targets:
-        venv_dir = w.manifest_path.parent / ".venv" if w.manifest_path else None
+        venv_dir = w.venv_dir
         if w.python_requires:
             if dry_run:
-                rel = str(venv_dir.relative_to(Path.cwd())) if venv_dir and Path.cwd() in venv_dir.parents else str(venv_dir)
+                rel = str(venv_dir).replace(str(Path.home()), "~")
                 idx = f"（镜像: {index_url}）" if index_url else ""
                 print(f"  [dry-run] {w.name}: venv {rel} + pip install{idx} {' '.join(w.python_requires)}")
                 continue
