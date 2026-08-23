@@ -157,8 +157,10 @@ adg setup --auto                 # 一条命令：自动选最快的源 + 装齐
 
 装完会打印一张「本机现在能读什么、还差什么、缺的那个怎么补」的表——**装到什么程度，就诚实报到什么程度**。
 
-> **已知门槛**：这一步仍然需要本机有 Python 3.10+ 并会开终端。对完全不碰命令行的用户，
-> 单文件可执行（免 Python）与图形界面尚未提供，见「迭代日志」中的规划。
+> **运行前提**：本机有 Python 3.10+（实际部署统一 3.12）并能开终端。这不是待补的门槛——
+> `adg` 的调用者是**开发机上的编码 Agent**（Claude Code、Codex 这类），其宿主本就具备。
+> 单文件可执行（免 Python）与图形界面**已决定不做**，PyInstaller 的实测否决依据见
+> [ADR 0003](docs/adr/0003-distribution-and-target-runtime.md)。
 
 开发模式：`pip install -e .`
 
@@ -210,7 +212,7 @@ agent-data-gateway/
 ├── workers/          # 22 个外部 worker 适配器（docling/mineru/whisper/anydoc/pdf_render/dwgread/... 各自 venv）
 ├── models/           # 冻结 Schema v0.1（EvidenceDocument/Manifest/WorkerProtocol/Quality/Security）
 ├── docs/spec/        # 12 份规格文档（00-11）
-├── docs/adr/         # 契约权威、写入所有权等架构决策记录
+├── docs/adr/         # 契约权威、写入所有权、分发形态等架构决策记录
 ├── input/ scratch/ output/   # 三层目录契约
 └── pyproject.toml
 ```
@@ -239,6 +241,7 @@ agent-data-gateway/
 | 2026-08-22 | v0.2.0 | 安全/一致性修复 | Worker 协议与产物路径严格录取；Manifest/Evidence Schema+哈希+身份读取校验；单写者锁、陈旧写入检测与孤儿 rendition 恢复；locator、图片 fitness、force 刷新、质量缓存、derived_from 和 wheel Worker 打包修复；源码 87 项测试、真实材料包与独立安装验证通过 |
 | 2026-08-23 | v0.2.0 | 缺陷/校准 | officecli 适配器实测校准：补 `--json`、按 `{success,data.results}` 解析、正文改段落级锚点、批注/修订经 anchoredTo 挂回段落；**查询失败不再退化成「0 条」而是显性失败**。同时修正 docx fixture 为合规 OOXML（此前缺 `document.xml.rels` 与 Content_Types 声明，Word 与任何规范实现都读不到那条批注，验证矩阵在测一个假场景）。L3 跨 parser 对齐首次真实通过：916 元素配对 score=1.0 |
 | 2026-08-23 | v0.2.0 | 能力/缺陷 | DWG 改为 dwgread 直读（dwg2dxf 中转的 DXF 结构性损坏，ezdxf.recover 亦拒绝加载），真实图纸提出 9777 条文字并带图层/句柄锚点；修复所有 adapter 用 UTF-8 硬解子进程输出（中文工具输出 GBK 一个字节即崩）。覆盖率 95.1%→**97.6%**，仅剩 CAJ 一项 |
+| 2026-08-23 | v0.2.0 | 设计决策 | 确立分发形态与目标运行环境：调用者是开发机上的编码 Agent，分发走 `pip`/`uv tool`，不做 `.app`/图形界面/代码签名。PyInstaller 冻结**实测否决**——能打出 20MB 单文件并发现 36 个 worker，但冻结二进制无 `venv`/`ensurepip` 装不了三方包，且 onefile 每次解包到新临时目录、装了下次即失。worker venv 落点随之移出 `site-packages`，改由 `ADG_HOME`（默认 `~/.adg`）承载。ADR 0003 |
 | 2026-08-22 | v0.2.0 | 能力/缺陷 | 加密 PDF 先试空用户口令（多数只是所有者限制，此前一律谎报"需密码"）；扫描 PDF 新增 pdf_render 本地位图链（无需 Docker/GPU）；接入 anydoc（Rust/MIT）补齐 RTF/EPUB/ODS/ODP 等格式；CAJ 从"类型无法识别"升级为带建议的显性未解决；修复"内容经派生物提取却报没读到"的核心误报。真实包覆盖率 88.6%→95.1% |
 | 2026-08-22 | v0.2.0 | 设计决策 | 确立「资料利用率」为一等目标：降级链（or 语义）之外增加增益轨（and 语义），多视角并行提取；分母靠廉价信号探测而非估计；多轨分歧只记录不裁决；成本靠探测门控/页级增益/身份缓存/条件升级/预算调度五机制，`--profile fast\|balanced\|quality` 是其上的界面。ADR 0002 + spec 11，实现未开始 |
 | 2026-08-22 | v0.2.0 | Agent 接口（P5） | 元素级检索索引（SQLite/FTS5，中文逐字切分，新鲜度指纹增量复用）+ `adg index/search/anchor/get`：命中带来源锚点、`quotable` 与未读全提示；查询逻辑单一权威（`gateway.agent_api`）；`adg verify` 20/22 → 25/27；新增 24 项测试 |
