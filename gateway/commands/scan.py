@@ -13,6 +13,7 @@ from ..manifest import MANIFEST_MD, OutputWriteLock, atomic_write_text, load_man
 from ..models import now_iso
 from ..privacy import RunLog
 from ._common import out_hint, print_json, resolve_out_dir, summary_line
+from packs.legal import register_preflights
 
 
 def build(sub) -> None:
@@ -69,6 +70,7 @@ def run(args) -> int:
         return 2
     out_dir = resolve_out_dir(args, package_path)
     out_dir.mkdir(parents=True, exist_ok=True)
+    register_preflights()  # 信号探测走 preflight 钩子，scan 阶段必须已注册
     with OutputWriteLock(out_dir):
         return _run_locked(args, package_path, out_dir)
 

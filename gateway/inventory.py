@@ -6,7 +6,7 @@ parse 阶段也复用本模块把 rendition/状态回写 manifest。
 from __future__ import annotations
 
 
-from . import magic
+from . import magic, signals as signals_mod
 from .discover import DiscoveryResult
 from .models import Item, PackageManifest, now_iso
 
@@ -24,6 +24,7 @@ def build_manifest(result: DiscoveryResult) -> PackageManifest:
             bytes=ff.bytes,
             origin=ff.origin,
             detected_type=ff.detected.to_dict(),
+            signals=signals_mod.probe(ff.detected.kind, ff.abs_path, ff.detected) or None,
             mtime=ff.mtime,
         )
         if ff.detected.kind == magic.EXECUTABLE:

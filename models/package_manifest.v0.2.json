@@ -1,0 +1,411 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://agent-data-gateway.dev/models/package_manifest.v0.2.json",
+  "title": "PackageManifest v0.2",
+  "description": "Agent Data Gateway 包级清单。一个案件材料包对应一份 manifest。规范说明见 docs/spec/03-package-manifest.md。",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "package_id",
+    "package_root_name",
+    "created_at",
+    "stats",
+    "integrity",
+    "quality",
+    "items"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.2"
+    },
+    "package_id": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "所有 source_id 排序后连接（\\n 分隔）的 sha256。包内容身份：增删任何文件都会改变。"
+    },
+    "package_root_name": {
+      "type": "string",
+      "description": "包根目录名（不含路径），如 案件材料"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "stats": {
+      "type": "object",
+      "required": [
+        "total_items",
+        "by_kind",
+        "total_bytes",
+        "dedup_saved"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "total_items": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "去重后的 item 总数（含容器成员）"
+        },
+        "by_kind": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "total_bytes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dedup_saved": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "因内容相同被去重的文件数"
+        }
+      }
+    },
+    "integrity": {
+      "type": "object",
+      "required": [
+        "payload_sha256",
+        "all_items_accounted",
+        "unresolved_items",
+        "expanded_archives",
+        "expanded_emails"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "payload_sha256": {
+          "type": "string",
+          "description": "除本字段外全 manifest canonical JSON 的 sha256"
+        },
+        "all_items_accounted": {
+          "type": "boolean",
+          "description": "发现的每个文件（含容器成员）是否都有 item 记录或显式排除记录"
+        },
+        "unresolved_items": {
+          "type": "array",
+          "description": "未能可靠读取的 item 及原因",
+          "items": {
+            "type": "object",
+            "required": [
+              "source_id",
+              "package_relative_path",
+              "reason"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "source_id": {
+                "type": "string"
+              },
+              "package_relative_path": {
+                "type": "string"
+              },
+              "reason": {
+                "type": "string"
+              },
+              "stage": {
+                "type": "string",
+                "enum": [
+                  "discovery",
+                  "type_detection",
+                  "parse",
+                  "expand",
+                  "security"
+                ]
+              },
+              "suggested_action": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          }
+        },
+        "expanded_archives": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "archive_source_id",
+              "member_count"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "archive_source_id": {
+                "type": "string"
+              },
+              "package_relative_path": {
+                "type": "string"
+              },
+              "member_count": {
+                "type": "integer"
+              },
+              "rejected_members": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "reason"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "expanded_emails": {
+          "type": "array",
+          "description": "邮件附件在 parse 阶段递归回灌后登记；scan 阶段为 pending",
+          "items": {
+            "type": "object",
+            "required": [
+              "email_source_id",
+              "status"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "email_source_id": {
+                "type": "string"
+              },
+              "package_relative_path": {
+                "type": "string"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "pending",
+                  "expanded",
+                  "failed"
+                ]
+              },
+              "attachment_count": {
+                "type": [
+                  "integer",
+                  "null"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "quality": {
+      "type": "object",
+      "required": [
+        "overall",
+        "extraction_coverage",
+        "duplicates",
+        "empties",
+        "encrypted",
+        "corrupted",
+        "unsupported",
+        "low_confidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "overall": {
+          "type": "string",
+          "enum": [
+            "pass",
+            "pass_with_warnings",
+            "fail"
+          ]
+        },
+        "extraction_coverage": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "description": "可靠读取（reliably_read）item 占比"
+        },
+        "duplicates": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "source_id",
+              "paths"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "source_id": {
+                "type": "string"
+              },
+              "paths": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "minItems": 2
+              }
+            }
+          }
+        },
+        "empties": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "0 字节文件的 package_relative_path"
+        },
+        "encrypted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "corrupted": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "unsupported": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "low_confidence": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "类型识别为低置信或解析为兜底 parser 的文件"
+        }
+      }
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "source_id",
+          "package_relative_path",
+          "kind",
+          "renditions",
+          "status"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "source_id": {
+            "type": "string"
+          },
+          "package_relative_path": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "description": "pdf/docx/xlsx/csv/image/text/html/email/chat/audio/video/archive/dxf/dwg/presentation/database/unknown"
+          },
+          "format": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "如 image/jpeg、message/rfc822"
+          },
+          "bytes": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "origin": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true,
+            "description": "容器成员来源（结构同 EvidenceDocument.source.origin）"
+          },
+          "derived_from": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true,
+            "description": "转换产物来源（source_id/tool/note），由编排器登记"
+          },
+          "detected_type": {
+            "type": [
+              "object",
+              "null"
+            ],
+            "additionalProperties": true,
+            "description": "scan 阶段类型识别结果，供 parse 路由复用"
+          },
+          "mtime": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "renditions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "discovered",
+              "parsed",
+              "parsed_with_warnings",
+              "failed",
+              "unresolved",
+              "unsupported",
+              "duplicate"
+            ]
+          },
+          "best_quality": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "pass",
+              "pass_with_warnings",
+              "fail",
+              null
+            ]
+          },
+          "errors": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string"
+            }
+          },
+          "signals": {
+            "type": "object",
+            "description": "spec 11 信号探测结果：每个信号取 present/absent/unknown 三态。探测器拿不准必须记 unknown 并排除出利用率分母，不得默认 absent。",
+            "additionalProperties": {
+              "enum": [
+                "present",
+                "absent",
+                "unknown"
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

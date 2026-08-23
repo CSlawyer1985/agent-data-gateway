@@ -65,8 +65,17 @@ def register_lite_parsers(registry: WorkerRegistry) -> None:
                     parse_fn=module.parse,
                 )
             )
-    routing.register_preflight("pdf", pdf_lite.preflight_pdf)
+    register_preflights()
     _registered = True
+
+
+def register_preflights() -> None:
+    """注册路由/信号探测钩子。
+
+    与 worker 注册分开：signals 是 scan 阶段的产物（spec 11 §3.2），
+    而 scan 不构建 worker registry。重复调用无副作用。
+    """
+    routing.register_preflight("pdf", pdf_lite.preflight_pdf)
 
 
 def chat_kind_refiner():

@@ -13,6 +13,7 @@ import zlib
 from pathlib import Path
 
 from gateway.security import detect_pdf_encrypted, detect_pdf_javascript
+from gateway.signals import ABSENT, PRESENT, UNKNOWN
 
 PARSER_VERSION = "0.1.0"
 
@@ -112,6 +113,36 @@ def _extract_text_from_content(data: bytes) -> tuple[int, list[str]]:
     return text_bytes, fragments
 
 
+# spec 11 §3.1 的 PDF 信号 → 原始字节/解压流里的粗检判据。
+_PDF_SIGNAL_MARKERS: dict[str, tuple[bytes, ...]] = {
+    "annotations": (b"/Annots",),
+    "form_fields": (b"/AcroForm",),
+    "attachments": (b"/EmbeddedFile", b"/Filespec"),
+    "bookmarks": (b"/Outlines",),
+    "metadata": (b"/Info", b"/Metadata"),
+    "signature_signals": (b"/ByteRange", b"/Sig"),
+}
+
+
+def _pdf_signals(raw: bytes, streams: list[bytes], *, text_bytes: int, image_refs: int, sampled_all: bool) -> dict:
+    """PDF 信号三态。命中即 present；未命中只有在采样可信时才判 absent。
+
+    PDF 1.5+ 把字典塞进对象流压缩，正则搜不到不等于不存在；流采样触到上限时同理。
+    这两种情况下判 absent 会压小分母、抬高利用率，按 spec 11 §3.2 必须记 unknown。
+    tables 不在此列——PDF 没有表格的结构标记，粗检无从判定，交由 normalize 补 unknown。
+    """
+    haystack = raw + b"".join(streams)
+    absent_ok = sampled_all and b"/ObjStm" not in raw
+    signals = {
+        "text_layer": PRESENT if text_bytes > 0 else (ABSENT if streams and absent_ok else UNKNOWN),
+        "page_images": PRESENT if image_refs > 0 else (ABSENT if absent_ok else UNKNOWN),
+    }
+    for name, markers in _PDF_SIGNAL_MARKERS.items():
+        hit = any(marker in haystack for marker in markers)
+        signals[name] = PRESENT if hit else (ABSENT if absent_ok else UNKNOWN)
+    return signals
+
+
 def preflight_pdf(source_path: Path, detected=None) -> dict:
     """路由预检：返回 pdf_class ∈ digital_simple / scanned / mixed_complex / encrypted。"""
     raw = source_path.read_bytes()
@@ -126,7 +157,8 @@ def preflight_pdf(source_path: Path, detected=None) -> dict:
     image_refs = len(re.findall(rb"/Subtype\s*/Image", raw))
     features["image_xobjects"] = image_refs
 
-    streams = _decompress_streams(raw, max_streams=40, max_total=8 * 1024 * 1024)
+    max_probe_streams = 40
+    streams = _decompress_streams(raw, max_streams=max_probe_streams, max_total=8 * 1024 * 1024)
     text_total = 0
     for data in streams:
         n, _ = _extract_text_from_content(data)
@@ -148,6 +180,8 @@ def preflight_pdf(source_path: Path, detected=None) -> dict:
         pdf_class = "mixed_complex"
     features["pdf_class"] = pdf_class
     features["heuristic"] = "pdflite-sampling"
+    features["signals"] = _pdf_signals(raw, streams, text_bytes=text_total, image_refs=image_refs,
+                                       sampled_all=len(streams) < max_probe_streams)
     return features
 
 

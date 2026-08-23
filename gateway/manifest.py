@@ -184,7 +184,7 @@ def _verify_payload_hash(doc: dict, path: Path) -> None:
 
 
 def _validate_manifest_doc(doc: dict, path: Path) -> None:
-    validate_model(doc, "package_manifest.v0.1.json")
+    validate_model(doc, "package_manifest.v0.2.json")
     _verify_payload_hash(doc, path)
     expected_package_id = package_id_of([item["source_id"] for item in doc["items"]])
     if doc["package_id"] != expected_package_id:
@@ -276,7 +276,7 @@ def _validate_rendition_doc(
     expected_source_id: str | None = None,
     expected_rendition_id: str | None = None,
 ) -> None:
-    validate_model(doc, "evidence_document.v0.1.json")
+    validate_model(doc, "evidence_document.v0.2.json")
     _verify_payload_hash(doc, path)
     source_id = doc["source_id"]
     rendition_id = doc["rendition_id"]
