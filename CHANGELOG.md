@@ -5,7 +5,7 @@
 
 ## Unreleased
 
-### 锚点唯一性与安全拦截显性化
+### v0.2.4：锚点唯一性与安全拦截显性化
 
 - element_id 派生加入 source_id（spec 07 同步）：此前同 parser/同 locator 的不同原件共享同一
   element_id——真实材料包 14419 个元素仅 13051 个唯一 ID，最坏一个 ID 横跨 15 个源文件，
