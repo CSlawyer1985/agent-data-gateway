@@ -307,6 +307,7 @@ agent-data-gateway/
 
 | 日期 | 版本 | 类型 | 要点 |
 |------|------|------|------|
+| 2026-08-24 | 未发布 | 锚点/拦截修复 | element_id 派生加入 source_id，anchor 回溯唯一指回原件（此前同 parser 同 locator 跨文件共享 ID，真实包一个 ID 最坏横跨 15 个源文件）；压缩包成员安全拦截显性化：被拦截容器不再计入可靠读取，明细进 status/manifest.md/report.md；status 与 report 的「哪些没读全」口径统一（补包级排除）；`.ost` 识别、docx_lite attachments 维度、csv_lite locator 小修复。已有产物需 `adg parse --force` 重跑生效 |
 | 2026-08-24 | v0.2.3 | 真实安装回归修复 | 修复 PaddleOCR 3.x、重型模块冷导入误报、VLM 脏 stdout、Ovis 缺 `torchvision`、`file://` 路径与尾部生成循环；图片占位符、OCR 多数低置信、截断/重复内容不再冒充可事实提取或可引用，可靠覆盖率为 0 的包不再报 pass。 |
 | 2026-08-24 | v0.2.2 | PDF/OCR 与契约修复 | 接入 PaddleOCR-VL-1.6、OvisOCR2；真实模型验收前标记 `protocol-smoke`，仅进入 quality/显式链。补完整 Schema 落盘前录取、`low_quality` 降级、统一硬件判定、subprocess 真实安全边界、运行依赖谱系与 wheel 发布门禁。 |
 | 2026-08-05 | v0.1.0 | 初始发布 | 编排器核心 + Legal Pack + 14 worker 适配器 + 10 份 spec + 验证矩阵 |

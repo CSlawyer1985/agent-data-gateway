@@ -254,7 +254,7 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
         "type_detection": "pass",
         "text_extraction": "pass" if text_found else "warning",
         "layout_preservation": "pass",
-        "attachments": "pass" if not embedded else "pass",
+        "attachments": "warning" if embedded else "pass",  # 嵌入对象仅列清单未展开
         "metadata": "pass" if meta_fields else "warning",
         "source_anchoring": "pass",
     }

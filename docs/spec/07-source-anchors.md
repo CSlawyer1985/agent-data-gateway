@@ -24,9 +24,10 @@
 ## 元素确定性 ID（L2 可重复性）
 
 ```
-element_id = "el_" + sha1( parser_name | parser_version | config_hash | locator_canonical | ordinal )[:12]
+element_id = "el_" + sha1( source_id | parser_name | parser_version | config_hash | locator_canonical | ordinal )[:12]
 ```
 
+- `source_id`：原件身份（spec 01）。参与派生保证跨文件唯一——不同原件即使同 parser/同 locator 也不共享 element_id，`resolve_anchor` 才能唯一指回原件。
 - `config_hash`：parser 生效配置 canonical JSON 的 sha256（前 16 位）。
 - `locator_canonical`：定位器字段按键排序的紧凑 JSON。
 - `ordinal`：同一块内同定位器的序号（防重复）。

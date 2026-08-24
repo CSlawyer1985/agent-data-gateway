@@ -182,7 +182,14 @@ class Dispatcher:
             it.status = "unresolved"
             it.errors = (it.errors or []) + ["压缩包未展开（见 unresolved_items）"]
         elif rec.get("rejected_members"):
+            rejected = rec["rejected_members"]
+            detail = "、".join(f"{r['name']}（{r['reason']}）" for r in rejected[:5])
+            if len(rejected) > 5:
+                detail += f" 等共 {len(rejected)} 项"
+            msg = f"{len(rejected)} 个成员被安全拦截: {detail}"
             it.status = "parsed_with_warnings"
+            if msg not in (it.errors or []):
+                it.errors = (it.errors or []) + [msg]
         else:
             it.status = "parsed"
         self.summary.skipped += 1
@@ -457,7 +464,7 @@ class Dispatcher:
                 key = anchor.canonical_locator(loc)
                 ordinal = seen_ordinals.get(key, 0)
                 seen_ordinals[key] = ordinal + 1
-                el["id"] = anchor.derive_element_id(parser_name, parser_version, config_hash, loc, ordinal)
+                el["id"] = anchor.derive_element_id(item.source_id, parser_name, parser_version, config_hash, loc, ordinal)
 
         # 2) annotations 规范化 + 锚点引用解析（_anchor_locator → anchor_element_id）
         annotations = empty_annotations()

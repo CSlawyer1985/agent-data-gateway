@@ -129,9 +129,10 @@ def reliably_read(rendition_qualities: list[dict]) -> bool:
 
 
 def reliably_read_item(kind: str, status: str, rendition_qualities: list[dict]) -> bool:
-    """item 级判据。容器类（archive）展开即入账；其余按 rendition 质量。"""
+    """item 级判据。容器类（archive）须全部成员展开（status=parsed）才算可靠——
+    parsed_with_warnings 意味着有成员被安全拦截，内容缺失；其余按 rendition 质量。"""
     if kind == "archive":
-        return status in ("parsed", "parsed_with_warnings")
+        return status == "parsed"
     return reliably_read(rendition_qualities)
 
 
@@ -165,6 +166,8 @@ def reliably_read_ids(items, qualities_of) -> set[str]:
         changed = False
         for it in items:
             if it.source_id in ok or it.status not in ("parsed", "parsed_with_warnings"):
+                continue
+            if it.kind == "archive":  # 有成员被安全拦截的容器内容缺失，不因其余成员可读而回填
                 continue
             if any(child.source_id in ok for child in children.get(it.source_id, ())):
                 ok.add(it.source_id)

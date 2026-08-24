@@ -13,9 +13,13 @@ def canonical_locator(locator: dict) -> str:
     return json.dumps(locator, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
-def derive_element_id(parser_name: str, parser_version: str, config_hash: str, locator: dict, ordinal: int = 0) -> str:
-    """element_id = el_ + sha1(name|version|config|locator|ordinal)[:12]"""
-    base = f"{parser_name}|{parser_version}|{config_hash}|{canonical_locator(locator)}|{ordinal}"
+def derive_element_id(source_id: str, parser_name: str, parser_version: str, config_hash: str, locator: dict, ordinal: int = 0) -> str:
+    """element_id = el_ + sha1(source_id|name|version|config|locator|ordinal)[:12]
+
+    source_id 参与派生：不同原件即使同 parser/同 locator 也不共享 element_id，
+    anchor 回溯才能唯一指回原件。
+    """
+    base = f"{source_id}|{parser_name}|{parser_version}|{config_hash}|{canonical_locator(locator)}|{ordinal}"
     return "el_" + hashlib.sha1(base.encode("utf-8")).hexdigest()[:12]
 
 

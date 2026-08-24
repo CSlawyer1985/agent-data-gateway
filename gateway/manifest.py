@@ -448,6 +448,18 @@ def render_manifest_md(m: PackageManifest) -> str:
             lines.append(f"| `{u['package_relative_path']}` | {u.get('stage', '')} | {u['reason']} | {action} |")
         lines.append("")
 
+    intercepted = [r for r in m.integrity.get("expanded_archives", []) if r.get("rejected_members")]
+    if intercepted:
+        total = sum(len(r["rejected_members"]) for r in intercepted)
+        lines.append(f"## 压缩包成员安全拦截（{total} 项）")
+        lines.append("")
+        lines.append("| 压缩包 | 成员 | 原因 |")
+        lines.append("|--------|------|------|")
+        for r in intercepted:
+            for mm in r["rejected_members"]:
+                lines.append(f"| `{r.get('package_relative_path', '')}` | `{mm['name']}` | {mm['reason']} |")
+        lines.append("")
+
     for key, title in (
         ("duplicates", "重复文件"),
         ("empties", "空文件"),

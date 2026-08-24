@@ -313,7 +313,7 @@ def detect(path: Path | str, *, head: bytes | None = None) -> DetectedType:
     if head.startswith(b"SQLite format 3\x00"):
         return DetectedType("application/vnd.sqlite3", "SQLite3", "adg-magic", "high", DATABASE, "sqlite")
     if head.startswith(b"!BDN"):
-        fmt = "pst" if ext in (".pst", ".ost") else "pst"
+        fmt = "ost" if ext == ".ost" else "pst"
         return DetectedType("application/vnd.ms-outlook-pst", "PST !BDN", "adg-magic", "high", EMAIL, fmt)
     if head.startswith(b"AC10"):
         return DetectedType("image/vnd.dwg", f"DWG {head[:6].decode('latin1')}", "adg-magic", "high", DWG)

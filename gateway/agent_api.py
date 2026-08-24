@@ -184,6 +184,23 @@ class PackageView:
                     reasons.get(item.source_id) or (item.errors or [None])[0] or "尚无可靠 rendition"
                 )
                 unreliable.append(entry)
+        # 包级排除（如符号链接不入包）没有 item 记录，只在 integrity.unresolved_items 里——
+        # 「哪些没读全」必须包含它们，否则与 report 口径不一致
+        item_paths = {it.package_relative_path for it in self.manifest.items}
+        for u in self.manifest.integrity.get("unresolved_items", []):
+            if u["package_relative_path"] not in item_paths:
+                unreliable.append({
+                    "package_relative_path": u["package_relative_path"],
+                    "kind": None,
+                    "status": "excluded",
+                    "reason": u.get("reason"),
+                })
+        # 压缩包成员安全拦截：成员没有 item 记录，从 integrity.expanded_archives 透出
+        interceptions = [
+            {"package_relative_path": rec.get("package_relative_path"), "rejected_members": rec.get("rejected_members")}
+            for rec in self.manifest.integrity.get("expanded_archives", [])
+            if rec.get("rejected_members")
+        ]
         quality = self.manifest.quality
         # 计划要跑却没跑的链。「已读全」只说文件都处理了，不代表每条链都跑过——
         # 不把这件事说出来，就等同于假装提完了（spec 11 §6.2 不变量 1）。
@@ -212,6 +229,7 @@ class PackageView:
             "reliably_read": reliable,
             "not_reliably_read": unreliable,
             "unresolved_count": len(self.manifest.integrity.get("unresolved_items", [])),
+            "security_interceptions": interceptions,
             "chains_not_run_count": len(chains_not_run),
             "chains_not_run": chains_not_run,
         }

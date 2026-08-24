@@ -5,6 +5,23 @@
 
 ## Unreleased
 
+### 锚点唯一性与安全拦截显性化
+
+- element_id 派生加入 source_id（spec 07 同步）：此前同 parser/同 locator 的不同原件共享同一
+  element_id——真实材料包 14419 个元素仅 13051 个唯一 ID，最坏一个 ID 横跨 15 个源文件，
+  `adg anchor` 回溯会列出无关原件。现在锚点唯一指回原件；已有产物需 `adg parse --force` 重跑后生效。
+- 压缩包成员安全拦截显性化：有成员被安全拦截的容器不再计入「可靠读取」（覆盖率随之诚实化），拦截
+  明细（成员名+原因）进入容器 item.errors、`adg status`（新增 `security_interceptions` 字段与终端
+  ⛔ 明细）、manifest.md 与 report.md 的「压缩包成员安全拦截」小节——此前仅存在于 manifest.json
+  的 integrity 里，spec 06 要求的「拦截显性记录」在各展示层均不可见。
+- 「哪些没读全」口径统一：包级排除（如符号链接不入包）此前只在 report 出现、status 缺失，同一问题
+  两种答案；现在 `adg status` 的 not_reliably_read 与 report「未可靠读取清单」同口径（item 级不可靠
+  + 包级排除），report 原「未可靠读取与待办」更名「未解决与排除明细」以消歧。
+- 小修复：`.ost` 魔数识别恒判为 pst（email-ost 路由规则成为死规则）；docx_lite 存在未展开嵌入对象时
+  attachments 维度恒 pass；csv_lite locator 死表达式清理。
+- 验证：源码 246 项测试通过；`adg verify` 27/28（1 项环境跳过）；对抗包实测（路径穿越/绝对路径/
+  zip bomb/符号链接/FTS5 注入）拦截记录全链路可见，anchor 回溯唯一命中。
+
 ### v0.2.3：真实安装与 OCR 质量修复
 
 - 修复 m1max 独立安装实测暴露的运行问题：PaddleOCR 3.x API/结果结构兼容；重型依赖用模块发现代替冷导入

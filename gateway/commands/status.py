@@ -43,7 +43,14 @@ def run(args) -> int:
                ("——材料包已读全" if all_clear else ""))
         )
         for e in unreliable[:20]:
-            print(f"  ❔ {e['package_relative_path']}（{e['kind']}）: {e['reason']}")
+            print(f"  ❔ {e['package_relative_path']}（{e['kind'] or '包级排除'}）: {e['reason']}")
+        interceptions = result["security_interceptions"]
+        if interceptions:
+            total = sum(len(r["rejected_members"]) for r in interceptions)
+            print(f"  ⛔ {total} 个压缩包成员被安全拦截：")
+            for r in interceptions[:10]:
+                for mm in r["rejected_members"][:5]:
+                    print(f"     {r['package_relative_path']}::{mm['name']}（{mm['reason']}）")
         if not_run:
             print(f"  ⚠️ {len(not_run)} 条链未执行——文件都处理了，但这些角度没看过：")
             for e in not_run[:10]:

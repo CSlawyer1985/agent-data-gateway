@@ -59,7 +59,7 @@ def parse(source_path: Path, *, kind: str, format: str | None, options: dict, li
             {
                 "type": "cell_row",
                 "text": " | ".join(row),
-                "locator": {"system": "row", "index": i if not has_header else i},
+                "locator": {"system": "row", "index": i},
                 "attrs": {"cells": row, **({"header": header} if header else {})},
             }
         )

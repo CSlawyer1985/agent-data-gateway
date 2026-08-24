@@ -40,22 +40,28 @@ class IdentityTest(unittest.TestCase):
 class AnchorIdTest(unittest.TestCase):
     def test_element_id_deterministic_same_config(self):
         loc = {"system": "paragraph", "index": 3}
-        e1 = anchor.derive_element_id("docx_lite", "0.1.0", "abc123", loc, 0)
-        e2 = anchor.derive_element_id("docx_lite", "0.1.0", "abc123", loc, 0)
+        e1 = anchor.derive_element_id("sha256:s1", "docx_lite", "0.1.0", "abc123", loc, 0)
+        e2 = anchor.derive_element_id("sha256:s1", "docx_lite", "0.1.0", "abc123", loc, 0)
         self.assertEqual(e1, e2)
         self.assertTrue(e1.startswith("el_"))
         self.assertEqual(len(e1), 3 + 12)
 
+    def test_element_id_changes_with_source(self):
+        loc = {"system": "paragraph", "index": 0}
+        e1 = anchor.derive_element_id("sha256:s1", "text_lite", "0.1.0", "c", loc, 0)
+        e2 = anchor.derive_element_id("sha256:s2", "text_lite", "0.1.0", "c", loc, 0)
+        self.assertNotEqual(e1, e2)
+
     def test_element_id_changes_with_parser(self):
         loc = {"system": "paragraph", "index": 0}
-        e1 = anchor.derive_element_id("pypdf", "0.1.0", "c", loc, 0)
-        e2 = anchor.derive_element_id("docling", "0.1.0", "c", loc, 0)
+        e1 = anchor.derive_element_id("sha256:s1", "pypdf", "0.1.0", "c", loc, 0)
+        e2 = anchor.derive_element_id("sha256:s1", "docling", "0.1.0", "c", loc, 0)
         self.assertNotEqual(e1, e2)
 
     def test_element_id_changes_with_ordinal(self):
         loc = {"system": "paragraph", "index": 0}
-        e1 = anchor.derive_element_id("p", "v", "c", loc, 0)
-        e2 = anchor.derive_element_id("p", "v", "c", loc, 1)
+        e1 = anchor.derive_element_id("sha256:s1", "p", "v", "c", loc, 0)
+        e2 = anchor.derive_element_id("sha256:s1", "p", "v", "c", loc, 1)
         self.assertNotEqual(e1, e2)
 
     def test_validate_document_catches_bad_locator(self):

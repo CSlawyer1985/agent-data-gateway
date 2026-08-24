@@ -81,6 +81,11 @@ def run(args) -> int:
         "dimension_histogram": {d: dict(dim_counter[d]) for d in DIMENSIONS},
         "fitness_coverage": {k: fitness_counter.get(k, 0) for k in FITNESS_KEYS},
         "unresolved_items": manifest.integrity.get("unresolved_items", []),
+        "security_interceptions": [
+            {"package_relative_path": r.get("package_relative_path"), "rejected_members": r.get("rejected_members")}
+            for r in manifest.integrity.get("expanded_archives", [])
+            if r.get("rejected_members")
+        ],
         "per_item": per_item,
     }
 
@@ -136,13 +141,25 @@ def _render_md(report: dict, items: list[Item]) -> str:
         lines += [""] + chain_executions
     unresolved = report["unresolved_items"]
     if unresolved:
-        lines += ["", f"## 未可靠读取与待办（{len(unresolved)}）", "", "| 文件 | 阶段 | 原因 | 建议 |", "|------|------|------|------|"]
+        lines += ["", f"## 未解决与排除明细（{len(unresolved)}）", "", "| 文件 | 阶段 | 原因 | 建议 |", "|------|------|------|------|"]
         for u in unresolved:
             lines.append(f"| `{u['package_relative_path']}` | {u.get('stage', '')} | {u['reason']} | {u.get('suggested_action') or '—'} |")
+    interceptions = report.get("security_interceptions", [])
+    if interceptions:
+        total_rejected = sum(len(r["rejected_members"]) for r in interceptions)
+        lines += ["", f"## 压缩包成员安全拦截（{total_rejected}）", "", "| 压缩包 | 成员 | 原因 |", "|--------|------|------|"]
+        for r in interceptions:
+            for mm in r["rejected_members"]:
+                lines.append(f"| `{r.get('package_relative_path', '')}` | `{mm['name']}` | {mm['reason']} |")
+    # 与 adg status 同口径：item 级不可靠 + 无 item 记录的包级排除（如符号链接）
     unreliable_items = [p for p in report["per_item"] if not p["reliable"] and p["status"] not in ("unsupported",)]
-    if unreliable_items:
-        lines += ["", f"## 未可靠读取清单（{len(unreliable_items)}）", ""]
+    item_paths = {p["path"] for p in report["per_item"]}
+    excluded = [u for u in unresolved if u["package_relative_path"] not in item_paths]
+    if unreliable_items or excluded:
+        lines += ["", f"## 未可靠读取清单（{len(unreliable_items) + len(excluded)}）", ""]
         for p in unreliable_items:
             lines.append(f"- `{p['path']}`（{p['kind']}，{p['status']}）")
+        for u in excluded:
+            lines.append(f"- `{u['package_relative_path']}`（包级排除，{u.get('stage', '')}）")
     lines.append("")
     return "\n".join(lines)

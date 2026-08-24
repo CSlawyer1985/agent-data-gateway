@@ -74,7 +74,8 @@ class QualityAggregationTest(unittest.TestCase):
 
     def test_archive_reliably_read_by_status(self):
         self.assertTrue(quality.reliably_read_item("archive", "parsed", []))
-        self.assertTrue(quality.reliably_read_item("archive", "parsed_with_warnings", []))
+        # parsed_with_warnings 意味着有成员被安全拦截——内容缺失，不算可靠读取
+        self.assertFalse(quality.reliably_read_item("archive", "parsed_with_warnings", []))
         self.assertFalse(quality.reliably_read_item("archive", "unresolved", []))
 
 
