@@ -1,8 +1,11 @@
 """worker 协议：subprocess 超时/崩溃隔离 + fragment 定稿。"""
 
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from gateway.errors import WorkerUnavailable
 from gateway.hardware import Environment
@@ -29,6 +32,7 @@ class WorkerIsolationTest(unittest.TestCase):
             )
         self.assertEqual(r["status"], "failed")
         self.assertEqual(r["error"]["kind"], "crash")
+        self.assertIn("退出码 3", r["error"]["message"])
 
     def test_timeout_isolated(self):
         import tempfile
@@ -89,6 +93,22 @@ class WorkerIsolationTest(unittest.TestCase):
                 "import json, sys\n"
                 "req=json.loads(sys.stdin.readline())\n"
                 "print(json.dumps({'type':'parse_result','job_id':req['job_id'],'status':'ok','unexpected':True}), flush=True)\n"
+            )
+            w = self._make(body, Path(d))
+            r = run_subprocess_protocol(
+                w, {"protocol_version": "0.1", "type": "parse_request", "job_id": "1", "source_path": "x", "source_id": "", "kind": "text", "work_dir": d},
+                timeout=10, max_output_bytes=1 << 20, env_passthrough=["PATH"],
+            )
+        self.assertEqual(r["status"], "failed")
+        self.assertEqual(r["error"]["kind"], "rejected")
+
+    def test_non_json_stdout_is_rejected(self):
+        with tempfile.TemporaryDirectory() as d:
+            body = (
+                "import json, sys\n"
+                "req=json.loads(sys.stdin.readline())\n"
+                "print('third-party log', flush=True)\n"
+                "print(json.dumps({'type':'parse_result','job_id':req['job_id'],'status':'ok','fragment':{}}), flush=True)\n"
             )
             w = self._make(body, Path(d))
             r = run_subprocess_protocol(
@@ -195,6 +215,21 @@ class RegistryTest(unittest.TestCase):
         self.assertEqual("hardware_unmet", blocked.reason)
         self.assertIn("内存不足", blocked.detail)
         self.assertTrue(allowed.available, "运行时缓存不得把另一台/另一次环境的硬件结论带过来")
+
+    def test_probe_import_checks_presence_without_executing_heavy_module(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            adapter = root / "adapter.py"
+            adapter.write_text("raise SystemExit(0)", encoding="utf-8")
+            (root / "cold_module.py").write_text("raise RuntimeError('module body must not run')", encoding="utf-8")
+            worker = WorkerInfo(
+                name="cold", version="1", role="parse", kinds=["text"], formats=None,
+                requirements={}, backend="subprocess", adapter_path=adapter,
+                venv_python=Path(sys.executable), probe_import="cold_module",
+            )
+            with mock.patch.dict(os.environ, {"PYTHONPATH": str(root)}):
+                available, detail = WorkerRegistry().availability(worker, refresh=True)
+        self.assertTrue(available, detail)
 
     def test_network_worker_cannot_use_subprocess_backend(self):
         with tempfile.TemporaryDirectory() as d:

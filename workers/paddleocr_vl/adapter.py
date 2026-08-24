@@ -7,6 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from document_vlm_common import config_fingerprint, markdown_fragment  # noqa: E402
+from stdio_protocol import library_output_to_stderr  # noqa: E402
 
 WORKER = {"name": "paddleocr_vl", "version": "0.1.0", "maturity": "protocol-smoke", "license": "Apache-2.0"}
 
@@ -64,7 +65,8 @@ def main():
         return
     if req.get("type") == "parse_request":
         try:
-            result = handle_parse(req)
+            with library_output_to_stderr():
+                result = handle_parse(req)
         except ImportError as exc:
             result = {"type": "parse_result", "status": "failed", "error": {"kind": "dependency_missing", "message": str(exc)}}
         except Exception as exc:

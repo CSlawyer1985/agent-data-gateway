@@ -5,6 +5,17 @@
 
 ## Unreleased
 
+### v0.2.3：真实安装与 OCR 质量修复
+
+- 修复 m1max 独立安装实测暴露的运行问题：PaddleOCR 3.x API/结果结构兼容；重型依赖用模块发现代替冷导入
+  探测；OCR/VLM 第三方日志从 JSONL stdout 隔离到 stderr；OvisOCR2 补 `torchvision`、改传本地路径，并在
+  生成期提前停止、清理尾部重复循环。
+- 收紧质量诚实性：PaddleOCR-VL 用图片占位符代替正文、确定性 OCR 多数文本框低置信、内容截断时，不再
+  声明可事实提取或可引用；OvisOCR2 重复循环结果强制标记为不完整并继续链内降级；包级可靠覆盖率为 0
+  时不再误报 `overall=pass`。
+- 发布版本升至 0.2.3；源码 245 项测试通过；中文法律长图 `quality` 模式在 m1max 上完成真实模型回归，
+  PaddleOCR 形成可靠主结果，PaddleOCR-VL/OvisOCR2 的不完整结果均被正确降级。
+
 ### v0.2.2：文档 VLM 与承重契约修复
 
 - 新增 PaddleOCR-VL-1.6、OvisOCR2 Worker；真实模型 fixture 尚未验收，成熟度保持

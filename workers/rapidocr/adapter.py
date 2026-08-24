@@ -7,6 +7,11 @@ OCR 文本框 → ocr_boxes 轨 + page_bbox 元素。
 
 import json
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from ocr_common import confidence_quality  # noqa: E402
+from stdio_protocol import library_output_to_stderr  # noqa: E402
 
 WORKER = {"name": "rapidocr", "version": "0.1.0", "maturity": "implemented", "license": "Apache-2.0"}
 
@@ -45,11 +50,13 @@ def handle_parse(req):
                 "attrs": {"ocr_confidence": round(float(score), 4)},
             })
 
-    low_conf = sum(1 for b in ocr_boxes if (b["confidence"] or 0) < 0.8)
+    ocr_quality, low_conf, majority_low = confidence_quality(ocr_boxes)
     blocks = [{"block_type": "page", "index": 0, "elements": elements}]
     notes = [f"OCR 文本框 {len(ocr_boxes)} 个；低置信（<0.8）{low_conf} 个", "OCR 有损：引用前需对照原件核验"]
     if not elements:
         notes.append("未识别到文字（可能为照片/无文字图）")
+    if majority_low:
+        notes.append("多数文本框低置信；仅适合粗略检索，不能作为可靠事实提取")
     return {
         "type": "parse_result",
         "status": "ok",
@@ -62,9 +69,9 @@ def handle_parse(req):
             "annotations": {"ocr_boxes": ocr_boxes},
             "quality_dims": {
                 "discovery": "pass", "type_detection": "pass",
-                "text_extraction": "pass" if elements else "warning",
+                "text_extraction": ocr_quality,
                 "layout_preservation": "pass",
-                "ocr": "pass" if elements else "warning",
+                "ocr": ocr_quality,
                 "metadata": "pass",
                 "source_anchoring": "pass",
             },
@@ -88,7 +95,8 @@ def main():
         return
     if req.get("type") == "parse_request":
         try:
-            result = handle_parse(req)
+            with library_output_to_stderr():
+                result = handle_parse(req)
         except ImportError as e:
             result = {"type": "parse_result", "status": "failed", "error": {"kind": "dependency_missing", "message": str(e)}}
         except Exception as e:

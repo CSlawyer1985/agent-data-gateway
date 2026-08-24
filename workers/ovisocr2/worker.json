@@ -13,11 +13,11 @@
     "venv": ".venv",
     "probe_import": "transformers"
   },
-  "python_requires": ["transformers", "torch", "accelerate", "pillow", "huggingface_hub"],
+  "python_requires": ["transformers", "torch", "torchvision", "accelerate", "pillow", "huggingface_hub"],
   "weight": "heavy",
   "maturity": "protocol-smoke",
   "license": "Apache-2.0",
-  "notes": "OvisOCR2 0.9B 页级端到端文档解析。当前完成协议与结构 smoke，尚未在仓库 fixture 上完成真实模型验收；接收单页图片，运行时只读本地模型缓存。",
+  "notes": "OvisOCR2 0.9B 页级端到端文档解析。已在仓库中文长图 fixture 验证协议、重复循环停止和低质量降级；内容质量尚无多样本门禁，故保持 protocol-smoke。接收单页图片，运行时只读本地模型缓存。",
   "auto_install": false,
   "auto_install_reason": "约 0.9B 参数且依赖 PyTorch，按需安装",
   "prefetch": {

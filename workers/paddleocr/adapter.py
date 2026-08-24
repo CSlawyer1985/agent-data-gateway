@@ -6,6 +6,11 @@ OCR 文本框 → ocr_boxes 轨 + page_bbox 元素（像素坐标归一化 0-100
 
 import json
 import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from ocr_common import confidence_quality  # noqa: E402
+from stdio_protocol import library_output_to_stderr  # noqa: E402
 
 WORKER = {"name": "paddleocr", "version": "0.1.0", "maturity": "implemented", "license": "Apache-2.0"}
 
@@ -21,17 +26,24 @@ def handle_parse(req):
 
     options = req.get("options") or {}
     lang = options.get("language", "ch")
-    ocr = PaddleOCR(use_angle_cls=False, lang=lang, show_log=False)
-    result = ocr.ocr(req["source_path"], cls=False)
+    if callable(getattr(PaddleOCR, "predict", None)):
+        ocr = PaddleOCR(
+            lang=lang,
+            use_doc_orientation_classify=False,
+            use_doc_unwarping=False,
+            use_textline_orientation=False,
+        )
+        lines = _v3_lines(ocr.predict(req["source_path"]))
+    else:
+        ocr = PaddleOCR(use_angle_cls=False, lang=lang, show_log=False)
+        result = ocr.ocr(req["source_path"], cls=False)
+        lines = result[0] if result and result[0] else []
 
     with Image.open(req["source_path"]) as im:
         img_w, img_h = im.size
 
     ocr_boxes = []
     elements = []
-    lines = []
-    if result and result[0]:
-        lines = result[0]
     for i, line in enumerate(lines):
         box, (text, conf) = line[0], line[1]
         xs = [p[0] for p in box]
@@ -50,8 +62,11 @@ def handle_parse(req):
             "attrs": {"ocr_confidence": round(float(conf), 4)},
         })
 
-    low_conf = sum(1 for b in ocr_boxes if (b["confidence"] or 0) < 0.8)
+    ocr_quality, low_conf, majority_low = confidence_quality(ocr_boxes)
     blocks = [{"block_type": "page", "index": 0, "elements": elements}]
+    notes = [f"OCR 文本框 {len(ocr_boxes)} 个；低置信（<0.8）{low_conf} 个", "OCR 有损：引用前需对照原件核验"]
+    if majority_low:
+        notes.append("多数文本框低置信；仅适合粗略检索，不能作为可靠事实提取")
     return {
         "type": "parse_result",
         "status": "ok",
@@ -64,16 +79,39 @@ def handle_parse(req):
             "annotations": {"ocr_boxes": ocr_boxes},
             "quality_dims": {
                 "discovery": "pass", "type_detection": "pass",
-                "text_extraction": "pass" if elements else "warning",
+                "text_extraction": ocr_quality,
                 "layout_preservation": "pass",
-                "ocr": "pass" if elements else "warning",
+                "ocr": ocr_quality,
                 "metadata": "pass",
                 "source_anchoring": "pass",
             },
-            "notes": [f"OCR 文本框 {len(ocr_boxes)} 个；低置信（<0.8）{low_conf} 个", "OCR 有损：引用前需对照原件核验"],
+            "notes": notes,
             "truncated": False,
         },
     }
+
+
+def _v3_lines(results):
+    lines = []
+    for result in results or []:
+        payload = getattr(result, "json", result)
+        if callable(payload):
+            payload = payload()
+        if not isinstance(payload, dict):
+            continue
+        payload = payload.get("res", payload)
+        texts = payload.get("rec_texts")
+        scores = payload.get("rec_scores")
+        polygons = payload.get("rec_polys")
+        if polygons is None:
+            polygons = payload.get("dt_polys")
+        if texts is None or scores is None or polygons is None:
+            continue
+        for polygon, text, score in zip(polygons, texts, scores):
+            if hasattr(polygon, "tolist"):
+                polygon = polygon.tolist()
+            lines.append([polygon, (str(text), float(score))])
+    return lines
 
 
 def main():
@@ -90,7 +128,8 @@ def main():
         return
     if req.get("type") == "parse_request":
         try:
-            result = handle_parse(req)
+            with library_output_to_stderr():
+                result = handle_parse(req)
         except ImportError as e:
             result = {"type": "parse_result", "status": "failed", "error": {"kind": "dependency_missing", "message": str(e)}}
         except Exception as e:

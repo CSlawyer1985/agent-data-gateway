@@ -508,7 +508,7 @@ class Dispatcher:
                 fitness[key] = default_fit[key]
         quality = quality_mod.finalize_quality(kind, dims, fitness, notes)
         if truncated:
-            quality["notes"].append("内容因结构上限被截断")
+            quality["notes"].append("内容不完整（截断、生成提前停止或结构上限）")
 
         # 4) 组装 + 身份 + 谱系
         source_block: dict[str, Any] = {

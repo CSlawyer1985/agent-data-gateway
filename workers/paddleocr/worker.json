@@ -31,8 +31,8 @@
   "auto_install": false,
   "auto_install_reason": "与 rapidocr 功能重叠且依赖体积约 1GB，按需再装",
   "prefetch": {
-    "python": "from paddleocr import PaddleOCR; PaddleOCR(use_angle_cls=True, lang='ch')",
-    "approx_size": "约 20MB",
-    "note": "PaddleOCR 中文检测/识别/方向模型。"
+    "python": "from paddleocr import PaddleOCR; PaddleOCR(lang='ch', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)",
+    "approx_size": "约 150MB（随 OCR 版本变化）",
+    "note": "PaddleOCR 中文检测/识别模型；预热参数与运行时一致。"
   }
 }

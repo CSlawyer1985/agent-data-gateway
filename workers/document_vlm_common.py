@@ -7,7 +7,14 @@
 from __future__ import annotations
 
 import hashlib
+import html
 import json
+import re
+
+_HTML_IMAGE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
+_MARKDOWN_IMAGE = re.compile(r"!\[[^\]]*\]\([^)]*\)")
+_HTML_TAG = re.compile(r"<[^>]+>")
+_MARKDOWN_MARKUP = re.compile(r"[#*_>`~\[\]()]")
 
 
 def config_fingerprint(config: dict) -> str:
@@ -18,8 +25,17 @@ def config_fingerprint(config: dict) -> str:
 def markdown_fragment(*, parser_name: str, parser_version: str, pages: list[str], notes: list[str]) -> dict:
     """把每页 Markdown 映射为页级可追溯 fragment。"""
     blocks = []
+    searchable_text = []
+    image_placeholders = 0
     for page_index, markdown in enumerate(pages):
         text = (markdown or "").strip()
+        image_placeholders += len(_HTML_IMAGE.findall(text)) + len(_MARKDOWN_IMAGE.findall(text))
+        plain = _HTML_IMAGE.sub(" ", text)
+        plain = _MARKDOWN_IMAGE.sub(" ", plain)
+        plain = _HTML_TAG.sub(" ", plain)
+        plain = html.unescape(_MARKDOWN_MARKUP.sub(" ", plain)).strip()
+        if plain:
+            searchable_text.append(plain)
         elements = []
         if text:
             elements.append(
@@ -31,12 +47,16 @@ def markdown_fragment(*, parser_name: str, parser_version: str, pages: list[str]
                 }
             )
         blocks.append({"block_type": "page", "index": page_index, "elements": elements})
-    has_text = any(block["elements"] for block in blocks)
+    has_text = bool(searchable_text)
+    text_quality = "pass" if has_text and image_placeholders == 0 else "warning"
+    if image_placeholders:
+        notes = notes + [f"输出含 {image_placeholders} 个未转写图片占位符；不能视为正文提取完整"]
     return _fragment(
         parser_name=parser_name,
         parser_version=parser_version,
         blocks=blocks,
         has_text=has_text,
+        text_quality=text_quality,
         layout_quality="warning",
         source_anchoring="pass",
         notes=notes + ["生成式 OCR 有损；关键引用、表格与公式须对照原件核验"],
@@ -45,7 +65,7 @@ def markdown_fragment(*, parser_name: str, parser_version: str, pages: list[str]
 
 def _fragment(
     *, parser_name: str, parser_version: str, blocks: list[dict], has_text: bool,
-    layout_quality: str, source_anchoring: str, notes: list[str]
+    text_quality: str, layout_quality: str, source_anchoring: str, notes: list[str]
 ) -> dict:
     return {
         "parser_name": parser_name,
@@ -56,13 +76,18 @@ def _fragment(
         "quality_dims": {
             "discovery": "pass",
             "type_detection": "pass",
-            "text_extraction": "pass" if has_text else "warning",
+            "text_extraction": text_quality,
             "layout_preservation": layout_quality,
-            "ocr": "pass" if has_text else "warning",
+            "ocr": text_quality,
             "metadata": "pass",
             "source_anchoring": source_anchoring,
         },
-        "fitness": {"layout_sensitive_analysis": layout_quality == "pass"},
+        "fitness": {
+            "fulltext_search": has_text,
+            "fact_extraction": has_text and text_quality == "pass",
+            "quotation": False,
+            "layout_sensitive_analysis": layout_quality == "pass",
+        },
         "notes": notes,
         "truncated": False,
     }

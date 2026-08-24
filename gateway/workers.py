@@ -263,11 +263,15 @@ class WorkerRegistry:
         else:
             py = sys.executable  # 允许装进当前解释器（adg setup --into-current）
         if w.probe_import:
-            rc = subprocess.run(
-                [py, "-c", f"import {w.probe_import}"],
-                capture_output=True,
-                timeout=30,
-            ).returncode
+            script = "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec(sys.argv[1]) else 1)"
+            try:
+                rc = subprocess.run(
+                    [py, "-c", script, w.probe_import],
+                    capture_output=True,
+                    timeout=15,
+                ).returncode
+            except (OSError, subprocess.TimeoutExpired):
+                return False, f"依赖探测失败: {w.probe_import}（adg setup --worker {w.name}）"
             if rc != 0:
                 return False, f"依赖未安装: {w.probe_import}（adg setup --worker {w.name}）"
         if w.python_requires and not w.runtime_versions:
@@ -459,7 +463,18 @@ def _run_jsonl_command(
     if result is not None:
         return result
     tail = stderr_tail.decode("utf-8", errors="replace")[-500:]
-    return _protocol_failure(request, "crash", f"worker 未返回终态（crash）。stderr: {tail}")
+    return_code = proc.returncode
+    if return_code is None:
+        exit_detail = "退出状态未知"
+    elif return_code < 0:
+        exit_detail = f"被信号 {-return_code} 终止"
+    else:
+        exit_detail = f"退出码 {return_code}"
+    return _protocol_failure(
+        request,
+        "crash",
+        f"worker 未返回终态（{exit_detail}）。stderr: {tail}",
+    )
 
 
 def run_subprocess_protocol(

@@ -4,6 +4,8 @@ import unittest
 from pathlib import Path
 
 from gateway import quality
+from gateway.inventory import recompute_package_quality
+from gateway.models import Item, PackageManifest
 
 
 class QualityAggregationTest(unittest.TestCase):
@@ -52,6 +54,23 @@ class QualityAggregationTest(unittest.TestCase):
     def test_empty_content_cannot_claim_fact_extraction(self):
         fit = quality.default_fitness("text", {"text_extraction": "pass"}, text_chars=0)
         self.assertFalse(fit["fact_extraction"])
+
+    def test_warning_text_cannot_claim_reliable_quotation(self):
+        fit = quality.default_fitness(
+            "image",
+            {"text_extraction": "warning", "source_anchoring": "pass"},
+            text_chars=100,
+        )
+        self.assertFalse(fit["quotation"])
+
+    def test_truncated_text_cannot_claim_reliable_quotation(self):
+        fit = quality.default_fitness(
+            "image",
+            {"text_extraction": "pass", "source_anchoring": "pass"},
+            text_chars=100,
+            truncated=True,
+        )
+        self.assertFalse(fit["quotation"])
 
     def test_archive_reliably_read_by_status(self):
         self.assertTrue(quality.reliably_read_item("archive", "parsed", []))
@@ -105,6 +124,35 @@ class DerivedCoverageTest(unittest.TestCase):
         child = self._Item("sha256:y", "image", "parsed", derived_from={"source_id": "sha256:x"})
         ids = quality.reliably_read_ids([parent, child], lambda sid: self.OK_Q if sid == "sha256:y" else [])
         self.assertNotIn("sha256:x", ids)
+
+
+class PackageQualityTest(unittest.TestCase):
+    def _manifest(self, count: int) -> PackageManifest:
+        manifest = PackageManifest(
+            package_root_name="fixture",
+            items=[
+                Item(
+                    source_id=f"sha256:{index:064x}",
+                    package_relative_path=f"{index}.png",
+                    kind="image",
+                    status="parsed_with_warnings",
+                )
+                for index in range(count)
+            ],
+        )
+        manifest.ensure_integrity_shape()
+        manifest.ensure_quality_shape()
+        return manifest
+
+    def test_zero_reliable_coverage_cannot_report_package_pass(self):
+        manifest = self._manifest(1)
+        recompute_package_quality(manifest, reliably_read_ids=set())
+        self.assertEqual("fail", manifest.quality["overall"])
+
+    def test_partial_reliable_coverage_reports_warning(self):
+        manifest = self._manifest(2)
+        recompute_package_quality(manifest, reliably_read_ids={manifest.items[0].source_id})
+        self.assertEqual("pass_with_warnings", manifest.quality["overall"])
 
 
 class QualitySpecCoverageGuard(unittest.TestCase):

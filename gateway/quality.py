@@ -100,14 +100,20 @@ def default_fitness(
 
     - fulltext_search：有可用文本且 text_extraction 非 fail
     - fact_extraction：存在文本、text_extraction=pass 且未截断（截断后事实可能缺半）
-    - quotation：source_anchoring=pass 且无锚点问题
+    - quotation：文本完整可用、未截断、source_anchoring=pass 且无锚点问题
     - layout_sensitive_analysis：layout_preservation=pass
     - authenticity_assessment：恒 false
     """
     fit = {
         "fulltext_search": text_chars > 0 and dims.get("text_extraction") in ("pass", "warning"),
         "fact_extraction": text_chars > 0 and dims.get("text_extraction") == "pass" and not truncated,
-        "quotation": dims.get("source_anchoring") == "pass" and anchor_problems == 0,
+        "quotation": (
+            text_chars > 0
+            and dims.get("text_extraction") == "pass"
+            and not truncated
+            and dims.get("source_anchoring") == "pass"
+            and anchor_problems == 0
+        ),
         "layout_sensitive_analysis": dims.get("layout_preservation") == "pass",
         "authenticity_assessment": False,
     }

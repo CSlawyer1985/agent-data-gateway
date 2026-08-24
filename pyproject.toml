@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "agent-data-gateway"
-version = "0.2.2"
+version = "0.2.3"
 description = "Agent Data Gateway — 让 Agent 获得可信、完整、可追溯的数据输入（摄取编排层，不是 parser）"
 readme = "README.md"
 requires-python = ">=3.10"

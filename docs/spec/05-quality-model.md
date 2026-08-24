@@ -39,11 +39,23 @@ parser 给出建议值，编排器拥有最终定稿权（worker 输出不可信
 |------|------|
 | fulltext_search | 可用于全文检索 |
 | fact_extraction | 可用于事实提取 |
-| quotation | 可可靠引用（锚点可回溯原件） |
+| quotation | 可可靠引用（文本完整可用、未截断，且锚点可回溯原件） |
 | layout_sensitive_analysis | 可支撑版面敏感分析 |
 | authenticity_assessment | 恒为 false——摄取 ≠ 取证，需人工/鉴定复核 |
 
 法律意义：一份文件可能可全文检索、可事实提取，但不能可靠引用、不能用于真伪鉴定。例如 pdflite 兜底提取的 PDF 文本：fulltext_search=true、fact_extraction=true、quotation=false（锚点不可靠）、layout_sensitive_analysis=false。
+
+确定性 OCR 的多数文本框低于 0.8 置信度时，`text_extraction` 与 `ocr` 至少降为 `warning`：仍可粗略全文
+检索，但不得声明可事实提取或可靠引用。文档视觉模型若用 `<img>` / Markdown 图片占位符代替正文，亦按不完整
+提取处理并继续链内降级。生成式模型若出现可确定识别的尾部重复循环，Worker 应尽早停止并清理重复部分，结果
+必须标记 `truncated=true`，且 `text_extraction`、`ocr` 至少为 `warning`。这里不判断哪个 rendition 更好，只执行
+可证伪的最低录取条件。
+
+## 包级 overall
+
+`PackageManifest.quality.extraction_coverage` 以 `reliably_read` 为口径。解析阶段覆盖率为 0 且包非空时，
+包级 `overall=fail`；部分覆盖为 `pass_with_warnings`；全部可靠读取且没有其他警告才为 `pass`。scan 阶段尚未
+解析，不应用覆盖率全灭语义。
 
 ## reliably_read（adg status 判定规则）
 

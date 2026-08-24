@@ -93,10 +93,19 @@ def recompute_package_quality(m: PackageManifest, *, reliably_read_ids: set[str]
     m.quality["extraction_coverage"] = round(covered / total, 4) if total else 0.0
     unresolved_count = len(m.integrity.get("unresolved_items", []))
     failed_items = [it for it in m.items if it.status in ("failed", "unresolved", "unsupported")]
-    if failed_items or unresolved_count:
-        # 有硬失败：overall 至多是 pass_with_warnings；全灭才是 fail（scan 阶段不适用全灭语义）
-        m.quality["overall"] = "pass_with_warnings" if discovered_only else ("fail" if covered == 0 and total > 0 else "pass_with_warnings")
-    elif m.quality.get("encrypted") or m.quality.get("corrupted") or m.quality.get("duplicates") or m.quality.get("low_confidence"):
+    if discovered_only and (failed_items or unresolved_count):
+        m.quality["overall"] = "pass_with_warnings"
+    elif not discovered_only and total > 0 and covered == 0:
+        m.quality["overall"] = "fail"
+    elif (
+        (not discovered_only and covered < total)
+        or failed_items
+        or unresolved_count
+        or m.quality.get("encrypted")
+        or m.quality.get("corrupted")
+        or m.quality.get("duplicates")
+        or m.quality.get("low_confidence")
+    ):
         m.quality["overall"] = "pass_with_warnings"
     else:
         m.quality["overall"] = "pass"

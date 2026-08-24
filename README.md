@@ -2,7 +2,7 @@
 
 <p align="center">
   <a href="https://github.com/CSlawyer1985/agent-data-gateway/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
-  <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/version-v0.2.0-brightgreen" alt="Version"></a>
+  <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/version-v0.2.3-brightgreen" alt="Version"></a>
   <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
   <br>
   <b>让 Agent 获得可信、完整、可追溯的数据输入</b>
@@ -37,11 +37,11 @@
 
 开源生态（MinerU / Docling / Tika / Whisper / PaddleOCR 等）解决的是 **Document Parsing**——怎么把一个文件解析出来。本工具做 **Agent Ingestion**——怎么把一个案件材料包**可靠地**变成 Agent 可消费、可追溯、可信的数据。
 
-## 当前状态（v0.2.0）
+## 当前状态（v0.2.3）
 
 | 维度 | 状态 |
 |------|------|
-| **版本** | v0.2.0（2026-08-23）；v0.1.0 于 2026-08-05 首次发布 |
+| **版本** | v0.2.3（2026-08-24）；v0.1.0 于 2026-08-05 首次发布 |
 | **编排器核心** | ✅ 完整可用：发现/安全展开/类型识别/特征路由/调度/质量/锚点/谱系/渲染，纯 stdlib |
 | **Legal Pack** | ✅ 11 个 lite parser + 预检钩子已注册 |
 | **外部 worker** | ✅ 24 个适配器随 wheel 发布（含文档 VLM / anydoc / pdf_render / dwgread），按环境安装；可用性以本机 `adg check` 为准 |
@@ -307,6 +307,7 @@ agent-data-gateway/
 
 | 日期 | 版本 | 类型 | 要点 |
 |------|------|------|------|
+| 2026-08-24 | v0.2.3 | 真实安装回归修复 | 修复 PaddleOCR 3.x、重型模块冷导入误报、VLM 脏 stdout、Ovis 缺 `torchvision`、`file://` 路径与尾部生成循环；图片占位符、OCR 多数低置信、截断/重复内容不再冒充可事实提取或可引用，可靠覆盖率为 0 的包不再报 pass。 |
 | 2026-08-24 | v0.2.2 | PDF/OCR 与契约修复 | 接入 PaddleOCR-VL-1.6、OvisOCR2；真实模型验收前标记 `protocol-smoke`，仅进入 quality/显式链。补完整 Schema 落盘前录取、`low_quality` 降级、统一硬件判定、subprocess 真实安全边界、运行依赖谱系与 wheel 发布门禁。 |
 | 2026-08-05 | v0.1.0 | 初始发布 | 编排器核心 + Legal Pack + 14 worker 适配器 + 10 份 spec + 验证矩阵 |
 | 2026-08-05 | v0.1.0 | 修复 | 真实混合数据包健壮性测试后：①单文件包 scan+parse 路径还原（P1-1）②dwgbmp 位置参数与无缩略图提示（P1-2）③降级链失败原因逐级聚合输出（P2-1）④PSD 魔数识别 ⑤detected_type/mtime 落盘（渲染物类型显示）⑥scan 阶段状态与 exit code 语义对齐 ⑦verify L3 alignment 路径修正 ⑧产物路径 scrub 覆盖 /private/tmp 与 /var/folders（隐私回归） |

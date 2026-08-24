@@ -20,7 +20,7 @@
   "weight": "heavy",
   "maturity": "protocol-smoke",
   "license": "Apache-2.0",
-  "notes": "PaddleOCR-VL-1.6 文档解析产线，直接接收 PDF/图片并输出逐页 Markdown。当前完成协议与结构 smoke，尚未在仓库 fixture 上完成真实模型验收；默认 CPU，可用 --worker-option device=cuda 切换设备。",
+  "notes": "PaddleOCR-VL-1.6 文档解析产线，直接接收 PDF/图片并输出逐页 Markdown。已在仓库中文长图 fixture 验证图片占位符会降为不完整结果；内容质量尚无多样本门禁，故保持 protocol-smoke。默认 CPU，可用 --worker-option device=cuda 切换设备。",
   "auto_install": false,
   "auto_install_reason": "模型与 Paddle 推理依赖较大，按需安装",
   "prefetch": {

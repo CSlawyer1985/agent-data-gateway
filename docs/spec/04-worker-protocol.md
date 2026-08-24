@@ -36,6 +36,9 @@ worker → 编排器:  {"type":"parse_result","job_id":"...","status":"ok",
 
 编排器据此做：可用性探测（`adg check`）、硬件匹配与降级决策（spec 08）、沙箱参数生成（spec 06）。
 
+`subprocess.probe_import` 只验证模块可被当前 Python 发现，不执行模块顶层代码。重型 ML 包冷导入可能超过一分钟，
+不能把冷启动耗时误判成“依赖未安装”；真实导入、模型初始化和推理由 Worker 执行路径负责，失败时按协议显性降级。
+
 ## 执行后端
 
 | backend | 隔离 | 说明 |
@@ -57,6 +60,8 @@ worker → 编排器:  {"type":"parse_result","job_id":"...","status":"ok",
 ## 编排器录取规则
 
 - 请求与每一条 progress/终态消息都按 `models/worker_protocol.v0.1.json` 校验；`job_id` 必须与请求一致，stdout 中的非 JSONL、未知字段或未知消息类型均按 `rejected` 失败。
+- 第三方推理库的日志、下载提示和进度必须写 stderr；官方 adapter 在调用重型库期间同时重定向 Python 与原生
+  stdout 到 stderr。编排器不容忍脏 stdout，以免日志被误录取成协议消息。
 - subprocess 与 Docker 共用同一套真实 deadline 和 stdout+stderr 输出上限；静默 Worker 也必须能在 deadline 到达时被停止。
 - `fragment_path`、`output_files[].path`、附件路径必须是 `work_dir` 相对路径。编排器拒绝绝对路径、`..`、不存在的文件以及任一路径组件的符号链接；通过录取后才读取内容。
 - Docker 内的绝对产物路径只允许位于 `/adg-work`，进入宿主机前转换为相对路径并再次执行 containment 校验。
