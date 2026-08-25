@@ -35,6 +35,7 @@
     "min_ram_mb": 4096,
     "gpu": "optional",
     "backend": [
+      "docker",
       "subprocess"
     ],
     "network": false

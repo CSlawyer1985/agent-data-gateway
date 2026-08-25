@@ -43,8 +43,15 @@ maturity、license、notes，以及可选的 auto_install(_reason) 与 prefetch�
 `adg check` 显示路径与原因。静默跳过等于这个 worker 从没存在过——用户只会看到"这个格式没有处理路径"，
 而不知道真正的原因是清单写坏了。
 
-`requirements.backend` 声明该 worker **支持**的后端，不是实际选用的后端：声明了 `docker.image` 的
-worker 由编排器无条件按 docker 执行，其 subprocess 路径当前不可达。
+`requirements.backend` 声明该 worker **支持**的后端。声明了 `docker.image` 的 worker 优先按 docker
+执行（强隔离）；docker 不可用（不在 PATH / daemon 未运行 / 镜像未构建）时，若该 worker 同时声明了
+`subprocess` 且适配器存在，则落回 subprocess 执行，并标记 `isolation_downgraded`：
+
+- **落回是显性的**：`worker_id` 随之变为 `subprocess:<name>` 并进入产物谱系，事后能查出这份产物
+  是在弱隔离下产生的；`adg check` 用 ⚠️ 而非 ✅ 标记，detail 说明「不限制文件与网络权限」。
+- **不落回的两种情况**：worker 未声明支持 `subprocess`（保持 docker 并报镜像/daemon 的真实原因）；
+  `network=true`（subprocess 执行不了网络策略，落回等于绕过 spec 06 的网络边界）。
+- 弱隔离只影响安全姿态，不影响解析质量——同一份适配器代码，因此不附加质量降级标注。
 
 `subprocess.probe_import` 只验证模块可被当前 Python 发现，不执行模块顶层代码。重型 ML 包冷导入可能超过一分钟，
 不能把冷启动耗时误判成“依赖未安装”；真实导入、模型初始化和推理由 Worker 执行路径负责，失败时按协议显性降级。

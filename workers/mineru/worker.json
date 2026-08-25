@@ -11,6 +11,7 @@
     "min_ram_mb": 8192,
     "gpu": "optional",
     "backend": [
+      "docker",
       "subprocess"
     ],
     "network": false

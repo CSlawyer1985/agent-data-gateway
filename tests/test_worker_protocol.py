@@ -299,6 +299,60 @@ class RegistryTest(unittest.TestCase):
                 rc = _sp.run([sys.executable, "-c", verify], capture_output=True, timeout=120).returncode
                 self.assertIn(rc, (0, 1, 3), f"{spec['name']}: verify 退出码 {rc} 不在三态内")
 
+    def _docker_worker(self, root: Path, **kw) -> WorkerInfo:
+        adapter = root / "adapter.py"
+        adapter.write_text("raise SystemExit(0)", encoding="utf-8")
+        requirements = kw.pop("requirements", {"backend": ["docker", "subprocess"], "network": False})
+        return WorkerInfo(
+            name="dockerish", version="1", role="parse", kinds=["pdf"], formats=None,
+            requirements=requirements, backend="docker", adapter_path=adapter,
+            # 不存在的镜像：无论本机 docker 是否运行，判定都是不可用，测试才确定
+            docker_image="adg-test-nonexistent:0.0.0",
+            venv_python=Path(sys.executable), probe_import="json", **kw,
+        )
+
+    def test_falls_back_to_subprocess_when_docker_unusable(self):
+        """docker 不可用时落回 worker 自己声明的 subprocess 路径，并标记隔离已降级。"""
+        with tempfile.TemporaryDirectory() as d:
+            worker = self._docker_worker(Path(d))
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertEqual("subprocess", worker.backend)
+        self.assertTrue(worker.isolation_downgraded)
+        self.assertTrue(status.available, status.detail)
+        self.assertIn("弱隔离", status.detail)
+        self.assertEqual("subprocess:dockerish", worker.worker_id)
+
+    def test_no_fallback_when_subprocess_not_declared(self):
+        """没声明支持 subprocess 就不许落回——保持 docker，并给出镜像的真实原因。"""
+        with tempfile.TemporaryDirectory() as d:
+            worker = self._docker_worker(Path(d), requirements={"backend": ["docker"], "network": False})
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertEqual("docker", worker.backend)
+        self.assertFalse(worker.isolation_downgraded)
+        self.assertFalse(status.available)
+        self.assertIn("docker", status.detail)
+
+    def test_network_worker_never_falls_back_to_subprocess(self):
+        """需要联网的 worker 落回 subprocess 就等于绕过网络策略——永不落回。"""
+        with tempfile.TemporaryDirectory() as d:
+            worker = self._docker_worker(
+                Path(d), requirements={"backend": ["docker", "subprocess"], "network": True})
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertEqual("docker", worker.backend)
+        self.assertFalse(worker.isolation_downgraded)
+        self.assertFalse(status.available)
+
+    def test_docker_workers_declare_the_backend_they_can_fall_back_to(self):
+        """声明了 docker 镜像的清单，backend 必须如实包含 docker（实际执行后端）。"""
+        import json as _json
+
+        for path in sorted(Path("workers").glob("*/worker.json")):
+            spec = _json.loads(path.read_text(encoding="utf-8"))
+            if not spec.get("docker"):
+                continue
+            with self.subTest(worker=spec["name"]):
+                self.assertIn("docker", spec["requirements"]["backend"])
+
     def test_all_shipped_manifests_match_schema(self):
         """随包发布的 worker 清单必须合规——写坏了要在这里红，而不是到用户机器上悄悄消失。"""
         import json as _json

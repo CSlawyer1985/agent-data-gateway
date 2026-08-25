@@ -139,6 +139,7 @@ class WorkerInfo:
     probe_import: str | None = None
     probe_command: list[str] | None = None
     model_verify: str | None = None
+    isolation_downgraded: bool = False  # 声明了 docker 但 docker 不可用，已落回弱隔离的 subprocess
     # docker
     docker_image: str | None = None
     manifest_path: Path | None = None
@@ -257,6 +258,7 @@ class WorkerRegistry:
         self, w: WorkerInfo, env: Environment | None = None, *, refresh: bool = False
     ) -> WorkerAvailability:
         """运行时存在性与硬件要求的单一判定入口。"""
+        self._resolve_backend(w)
         key = f"{w.name}:{w.backend}"
         if refresh or key not in self._availability_cache:
             self._availability_cache[key] = self._check_availability(w, env)
@@ -273,23 +275,48 @@ class WorkerRegistry:
             return WorkerAvailability(False, "hardware_unmet", "；".join(problems), tuple(problems))
         return WorkerAvailability(True, "available", runtime_detail)
 
+    def _docker_usable(self, w: WorkerInfo) -> tuple[bool, str]:
+        """docker 后端能否真的跑起来：二进制在 PATH 且镜像已构建。"""
+        if not shutil.which("docker"):
+            return False, "docker 不在 PATH"
+        image = w.docker_image or ""
+        try:
+            rc = subprocess.run(["docker", "image", "inspect", image], capture_output=True, timeout=15).returncode
+        except (OSError, subprocess.TimeoutExpired):
+            return False, f"docker 查询失败（daemon 未运行？）: {image}"
+        if rc != 0:
+            return False, f"docker 镜像不可用: {image}（daemon 未运行或镜像未构建，见 workers/{w.name}/README）"
+        return True, "docker 镜像可用"
+
+    def _resolve_backend(self, w: WorkerInfo) -> None:
+        """docker 不可用时落回 worker 自己声明的 subprocess 路径。
+
+        docker 提供只读挂载、network=none 与资源限额，subprocess 只隔离依赖、崩溃和超时，
+        仍继承当前用户的文件与网络权限。因此只在 worker 显式声明支持 subprocess 时才落回；
+        需要联网的 worker 永不落回——subprocess 执行不了网络策略（spec 06）。
+        落回后 worker_id 变为 `subprocess:<name>`，产物谱系里能看出这次用的是弱隔离。
+        """
+        if not w.docker_image:
+            return
+        if self._docker_usable(w)[0]:
+            w.backend, w.isolation_downgraded = "docker", False
+            return
+        eligible = (
+            "subprocess" in (w.requirements.get("backend") or [])
+            and w.requirements.get("network") is not True
+            and bool(w.adapter_path and w.adapter_path.exists())
+        )
+        if eligible:  # 不合条件时保持 docker，让判定给出镜像/daemon 的真实原因
+            w.backend, w.isolation_downgraded = "subprocess", True
+
     def _check_availability(self, w: WorkerInfo, env: Environment | None) -> tuple[bool, str, str]:
         if w.backend == "subprocess" and w.requirements.get("network") is True:
             return False, "需要联网的 worker 必须使用可执行网络策略的容器后端", "unavailable"
         if w.backend == "inproc":
             return True, "stdlib 内置", "available"
         if w.backend == "docker":
-            if not shutil.which("docker"):
-                return False, "docker 不在 PATH", "unavailable"
-            image = w.docker_image or ""
-            rc = subprocess.run(
-                ["docker", "image", "inspect", image],
-                capture_output=True,
-                timeout=15,
-            ).returncode
-            if rc != 0:
-                return False, f"docker 镜像未构建: {image}（见 workers/{w.name}/README）", "unavailable"
-            return True, "docker 镜像可用", "available"
+            ok, detail = self._docker_usable(w)
+            return (True, detail, "available") if ok else (False, detail, "unavailable")
         # subprocess
         if not w.adapter_path or not w.adapter_path.exists():
             return False, "adapter 缺失", "unavailable"
@@ -331,6 +358,8 @@ class WorkerRegistry:
             if ready is False:
                 return False, f"模型未就绪: 权重未预取（adg setup --worker {w.name}）", "model_missing"
         detail = "subprocess 可用" if own_venv else "subprocess 可用（依赖在当前解释器，非 worker 专属 venv）"
+        if w.isolation_downgraded:
+            detail += "；docker 不可用已落回 subprocess（弱隔离：不限制文件与网络权限）"
         return True, detail, "available"
 
 

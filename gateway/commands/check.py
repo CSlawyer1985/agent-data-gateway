@@ -31,6 +31,7 @@ def run(args) -> int:
                 "detail": status.detail,
                 "requirement_problems": list(status.requirement_problems),
                 "maturity": w.maturity,
+                "isolation_downgraded": w.isolation_downgraded,
             }
         )
         if status.available:
@@ -55,6 +56,9 @@ def run(args) -> int:
         for w in workers_report:
             mark = "✅" if w["available"] else "—"
             detail = "" if w["available"] else f"（{w['detail']}）"
+            if w["isolation_downgraded"]:
+                mark = "⚠️"  # 能跑，但隔离比声明的弱——不能只显示一个对勾
+                detail = "（docker 不可用，落回 subprocess 弱隔离）" if w["available"] else detail
             print(f"  {mark} {w['name']:<14} {w['backend']:<10} {','.join(w['kinds'])[:36]:<36} {detail}")
         if manifest_errors:
             # 清单不合规的 worker 根本没进注册表，上面那张表里看不到它——不说就等于它从没存在过
