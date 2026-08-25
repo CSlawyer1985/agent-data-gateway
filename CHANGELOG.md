@@ -22,7 +22,14 @@
 - `adg setup` 的预取门改用「可用或仅缺模型」判定：否则模型缺失导致不可用、不可用又被排除出预取目标，
   修复路径自己堵死自己。
 - spec 04 补上可用性三维度表与 `prefetch.verify` 契约。
-- 验证：源码 252 项测试通过（新增 6 项，含随包 verify 脚本可执行性）；`adg verify` 27/28 与修复前一致；
+- `model_missing` 只作运行期判定值，写入降级链前映射回 `unavailable`：产物里的
+  `parser.fell_back_from[].reason` 是 EvidenceDocument Schema 的封闭 enum，新取值会让
+  「跳过缺权重的 worker 之后本来成功」的产物在录取时被 Schema 拒绝——实测整包从可解析变成
+  `fail`、连 lite 兜底一起打掉，命中的正是本修复要救的那批人。具体到哪一步由 `detail` 说明，
+  `adg check` 等未版本化界面仍显示 `model_missing`。同时恢复了「建议: adg setup --worker X」
+  这条只在 `reason == "unavailable"` 时追加的可执行建议。
+- 验证：源码 253 项测试通过（新增 7 项，含随包 verify 脚本可执行性、以及「缺权重 worker 被跳过后
+  后续产物必须能落盘」的回归用例——该用例经回退修复确认能变红）；`adg verify` 27/28 与修复前一致；
   空模型缓存下四个 worker 均从 ✅ 转为显性 `model_missing`，真实缓存下保持 ✅。
 
 ### v0.2.4：锚点唯一性与安全拦截显性化

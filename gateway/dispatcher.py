@@ -297,7 +297,9 @@ class Dispatcher:
                 fell_back.append({
                     "name": w.name,
                     "version": w.version,
-                    "reason": availability.reason,
+                    # 产物里的降级分类是 evidence_document schema 的封闭 enum，比运行期判定粗：
+                    # 权重缺失归入 unavailable（它确实没跑成），具体到哪一步由 detail 说明。
+                    "reason": "unavailable" if availability.reason == "model_missing" else availability.reason,
                     "detail": availability.detail,
                 })
                 continue

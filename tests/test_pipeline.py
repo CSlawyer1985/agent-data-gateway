@@ -28,6 +28,60 @@ def _text_fragment(text: str, *, locator_system: str = "paragraph") -> dict:
     }
 
 
+class ModelMissingFallbackTest(unittest.TestCase):
+    """缺权重的 worker 被跳过后，链上后续 worker 的产物必须能落盘。
+
+    产物里的降级分类是 evidence_document schema 的封闭 enum。运行期判定若新增取值
+    并直接写进降级链，会让「降级之后本来成功」的解析在录取时被拒——连 lite 兜底一起打掉。
+    """
+
+    def test_successful_fallback_persists_after_model_missing_worker(self):
+        import sys
+        import tempfile
+
+        from gateway.schema import validate_model
+
+        with tempfile.TemporaryDirectory(prefix="adg-model-missing-") as tmp:
+            root = Path(tmp)
+            package = root / "包"
+            package.mkdir()
+            (package / "a.txt").write_text("担保合同正文", encoding="utf-8")
+            out = root / "out"
+
+            registry = WorkerRegistry()
+            register_lite_parsers(registry)
+            adapter = root / "adapter.py"
+            adapter.write_text("raise SystemExit(0)", encoding="utf-8")
+            registry.workers["needs_weights"] = WorkerInfo(
+                name="needs_weights", version="1", role="parse", kinds=["text"], formats=None,
+                requirements={}, backend="subprocess", adapter_path=adapter,
+                venv_python=Path(sys.executable), probe_import="json",
+                model_verify="import sys; sys.exit(1)",
+            )
+
+            save_manifest(build_manifest(discover_package(package, out)), out)
+            Dispatcher(
+                package, out, load_manifest(out), registry, env=detect_environment(),
+                options=ParseOptions(force=True, no_abs_log=True,
+                                     chain_override={"text": ["needs_weights", "text_lite"]}),
+            ).run()
+
+            manifest = load_manifest(out)
+            item = manifest.items[0]
+            self.assertEqual("parsed", item.status, f"降级后的成功产物被拒: {item.errors}")
+
+            docs = list_rendition_docs(out, item.source_id)
+            self.assertTrue(docs, "缺权重的 worker 之后没有留下任何产物")
+            doc = docs[0]
+            validate_model(doc, "evidence_document.v0.2.json")
+
+            fell_back = doc["parser"]["fell_back_from"] or []
+            skipped = [fb for fb in fell_back if fb["name"] == "needs_weights"]
+            self.assertTrue(skipped, f"降级链没有记下被跳过的 worker: {fell_back}")
+            self.assertEqual("unavailable", skipped[0]["reason"])
+            self.assertIn("模型", skipped[0]["detail"])
+
+
 class EndToEndTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
