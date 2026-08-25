@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://adg.local/models/worker_manifest.v0.1.json",
+  "title": "ADG Worker Manifest v0.1",
+  "description": "workers/<name>/worker.json 的结构契约：worker 声明自己的能力与运行要求。语义见 docs/spec/04-worker-protocol.md。清单只拥有能力与运行要求（ADR 0001 决策 7）——格式识别事实归 gateway.magic，路由事实归 gateway.routing.ROUTE_RULES，此处不重复表达。",
+  "type": "object",
+  "required": ["name", "version", "handles", "requirements", "subprocess", "python_requires", "weight", "maturity", "license", "notes"],
+  "additionalProperties": false,
+  "properties": {
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9_]+$",
+      "description": "注册名，与所在目录名一致；worker_id 为 <backend>:<name>"
+    },
+    "version": {"type": "string", "description": "适配器版本，进入谱系记录"},
+    "handles": {
+      "type": "array",
+      "minItems": 1,
+      "description": "能处理的 kind 与承担的角色。同一 kind 由哪个 worker 实际承担由路由决定，不在此处声明优先级。",
+      "items": {
+        "type": "object",
+        "required": ["kind", "role"],
+        "additionalProperties": false,
+        "properties": {
+          "kind": {
+            "enum": ["archive", "audio", "caj", "chat", "csv", "database", "doc", "docx", "dwg", "dxf", "email", "executable", "html", "image", "pdf", "presentation", "text", "unknown", "video", "xls", "xlsx"],
+            "description": "gateway.magic 的 kind 词表；新增 kind 必须先在 magic 侧成立"
+          },
+          "role": {
+            "enum": ["parse", "transform", "enrich"],
+            "description": "parse=内容解析；transform=格式转换，产物回灌为新 item；enrich=补充信号"
+          },
+          "formats": {
+            "type": "array",
+            "items": {"type": "string"},
+            "description": "限定到该 kind 下的具体格式；省略表示该 kind 全部格式"
+          }
+        }
+      }
+    },
+    "requirements": {
+      "type": "object",
+      "required": ["min_ram_mb", "gpu", "backend", "network"],
+      "additionalProperties": false,
+      "description": "运行要求。与环境比对的实现见 gateway.hardware.check_requirements。",
+      "properties": {
+        "min_ram_mb": {"type": "integer", "minimum": 0},
+        "gpu": {"enum": ["none", "optional", "required"]},
+        "backend": {
+          "type": "array",
+          "minItems": 1,
+          "description": "该 worker 支持的执行后端。注意这不是实际选用的后端：声明了 docker.image 的 worker 由编排器无条件按 docker 执行。",
+          "items": {"enum": ["docker", "subprocess", "inproc"]}
+        },
+        "network": {
+          "type": "boolean",
+          "description": "是否需要外联。true 时禁止 subprocess 后端——只有容器能执行网络策略（spec 06）。"
+        }
+      }
+    },
+    "subprocess": {
+      "type": "object",
+      "required": ["adapter"],
+      "additionalProperties": false,
+      "description": "subprocess 后端参数。probe_import 只验证模块可被发现，不执行模块顶层代码；完整依赖判定读 python_requires。",
+      "properties": {
+        "adapter": {"type": "string", "description": "相对清单目录的适配器脚本"},
+        "venv": {"type": "string", "description": "worker 专属 venv 目录名；落点见 ADG_HOME"},
+        "probe_import": {"type": "string", "description": "轻量可发现性探测的模块名"},
+        "probe_command": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string"},
+          "description": "外部二进制的探测命令；退出码非零即判不可用"
+        }
+      }
+    },
+    "docker": {
+      "type": "object",
+      "required": ["image"],
+      "additionalProperties": false,
+      "properties": {"image": {"type": "string", "description": "镜像标签；未构建时判不可用并指向该 worker 的 README"}}
+    },
+    "python_requires": {
+      "type": "array",
+      "items": {"type": "string"},
+      "description": "全部 Python 依赖（pip 名，可带 extras 与版本约束）。逐个确定缺失即判不可用——probe_import 只验一个模块，不足以说明能跑起来。外部二进制型 worker 为空数组。"
+    },
+    "weight": {"enum": ["light", "heavy"], "description": "heavy 表示重模型或大依赖，fast 档不优先选它"},
+    "maturity": {
+      "enum": ["implemented", "experimental", "protocol-smoke"],
+      "description": "protocol-smoke=只验过协议与降级，内容质量尚无多样本门禁，不进默认主链"
+    },
+    "license": {"type": "string", "description": "被调用工具的许可证。GPL/AGPL 组件必须隔离为独立进程，不链入编排器（ADR 0001 决策 4 之外的纪律见 spec 04）。"},
+    "notes": {"type": "string", "description": "能力边界与已知限制的人类可读说明"},
+    "auto_install": {
+      "type": "boolean",
+      "description": "是否进 adg setup --auto 一键档。准入事实归清单，不在代码里硬编码名单。"
+    },
+    "auto_install_reason": {"type": "string", "description": "auto_install=false 时说明原因"},
+    "prefetch": {
+      "type": "object",
+      "required": ["python", "approx_size", "note", "verify"],
+      "additionalProperties": false,
+      "description": "需要预取模型权重的 worker 的预热与就绪判定。声明了 prefetch 就必须同时提供 verify——否则权重缺失会被报成可用，运行时才失败。",
+      "properties": {
+        "python": {"type": "string", "description": "在 worker venv 内执行的预取代码；允许联网下载"},
+        "approx_size": {"type": "string", "description": "下载体积的量级说明，用于安装前告知"},
+        "note": {"type": "string", "description": "预取内容说明"},
+        "verify": {
+          "type": "string",
+          "description": "离线就绪判定代码：退出码 0=就绪，1=确定缺失，其余=查不出来。必须不联网、不下载，且不执行重模块顶层代码。"
+        }
+      }
+    }
+  }
+}

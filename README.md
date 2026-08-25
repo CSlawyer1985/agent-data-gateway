@@ -307,6 +307,7 @@ agent-data-gateway/
 
 | 日期 | 版本 | 类型 | 要点 |
 |------|------|------|------|
+| 2026-08-25 | 未发布 | 契约治理 | `worker.json` 纳入 Schema 治理（新增 `models/worker_manifest.v0.1.json`；24 份清单全部受校验，`handles.kind` 对齐 magic 词表，声明 `prefetch` 即强制提供 `verify`）；不合规清单从静默跳过改为 `adg check` 显性报错；Agent 状态项 `kind` 恢复恒有值并新增 `excluded_count` 供对账 |
 | 2026-08-25 | 未发布 | 可用性探测修复 | 外部试用反馈：worker 报 ✅ 但缺依赖/缺模型，跑到一半才炸。可用性判定补齐两个维度——`python_requires` 全量进入判定（此前只验 `probe_import` 一个模块，缺失信号采集到了却只用于谱系）、新增 `prefetch.verify` 模型就绪三态判定（确定缺失报 `model_missing`，查不出来不诬告）；无专属 venv 时的当前解释器回退在 detail 显式说明；`adg setup` 预取门改为「可用或仅缺模型」以免堵死修复路径 |
 | 2026-08-24 | v0.2.4 | 锚点/拦截修复 | element_id 派生加入 source_id，anchor 回溯唯一指回原件（此前同 parser 同 locator 跨文件共享 ID，真实包一个 ID 最坏横跨 15 个源文件）；压缩包成员安全拦截显性化：被拦截容器不再计入可靠读取，明细进 status/manifest.md/report.md；status 与 report 的「哪些没读全」口径统一（补包级排除）；`.ost` 识别、docx_lite attachments 维度、csv_lite locator 小修复。已有产物需 `adg parse --force` 重跑生效 |
 | 2026-08-24 | v0.2.3 | 真实安装回归修复 | 修复 PaddleOCR 3.x、重型模块冷导入误报、VLM 脏 stdout、Ovis 缺 `torchvision`、`file://` 路径与尾部生成循环；图片占位符、OCR 多数低置信、截断/重复内容不再冒充可事实提取或可引用，可靠覆盖率为 0 的包不再报 pass。 |

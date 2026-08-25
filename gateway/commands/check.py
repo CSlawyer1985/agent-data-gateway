@@ -35,11 +35,13 @@ def run(args) -> int:
         )
         if status.available:
             available += 1
+    manifest_errors = [{"path": str(p), "error": msg} for p, msg in registry.manifest_errors]
     report = {
         "environment": env.to_dict(),
         "workers": workers_report,
         "workers_available": available,
         "workers_total": len(workers_report),
+        "manifest_errors": manifest_errors,
     }
     if args.json:
         print_json(report)
@@ -54,6 +56,11 @@ def run(args) -> int:
             mark = "✅" if w["available"] else "—"
             detail = "" if w["available"] else f"（{w['detail']}）"
             print(f"  {mark} {w['name']:<14} {w['backend']:<10} {','.join(w['kinds'])[:36]:<36} {detail}")
+        if manifest_errors:
+            # 清单不合规的 worker 根本没进注册表，上面那张表里看不到它——不说就等于它从没存在过
+            print(f"  ⚠️ {len(manifest_errors)} 份 worker 清单不合规，未注册：")
+            for e in manifest_errors:
+                print(f"     {e['path']}: {e['error']}")
     # python 版本过低才失败；worker 缺失只是现状报告
     major, minor = sys.version_info[:2]
     return 0 if (major, minor) >= (3, 10) else 2

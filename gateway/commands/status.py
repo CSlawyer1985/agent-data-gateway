@@ -43,7 +43,7 @@ def run(args) -> int:
                ("——材料包已读全" if all_clear else ""))
         )
         for e in unreliable[:20]:
-            print(f"  ❔ {e['package_relative_path']}（{e['kind'] or '包级排除'}）: {e['reason']}")
+            print(f"  ❔ {e['package_relative_path']}（{e['kind']}）: {e['reason']}")
         interceptions = result["security_interceptions"]
         if interceptions:
             total = sum(len(r["rejected_members"]) for r in interceptions)

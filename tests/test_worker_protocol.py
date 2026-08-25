@@ -299,6 +299,50 @@ class RegistryTest(unittest.TestCase):
                 rc = _sp.run([sys.executable, "-c", verify], capture_output=True, timeout=120).returncode
                 self.assertIn(rc, (0, 1, 3), f"{spec['name']}: verify 退出码 {rc} 不在三态内")
 
+    def test_all_shipped_manifests_match_schema(self):
+        """随包发布的 worker 清单必须合规——写坏了要在这里红，而不是到用户机器上悄悄消失。"""
+        import json as _json
+
+        from gateway.schema import validate_model
+
+        manifests = sorted(Path("workers").glob("*/worker.json"))
+        self.assertGreater(len(manifests), 1, "未找到 worker 清单")
+        for path in manifests:
+            with self.subTest(worker=path.parent.name):
+                validate_model(_json.loads(path.read_text(encoding="utf-8")), "worker_manifest.v0.1.json")
+
+    def test_prefetch_without_verify_is_rejected_by_schema(self):
+        """声明要下模型却不给就绪判定，就会退回「报可用、运行时才失败」——Schema 必须拦住。"""
+        from gateway.errors import ContractViolation
+        from gateway.schema import validate_model
+
+        spec = {
+            "name": "weighty", "version": "1",
+            "handles": [{"kind": "image", "role": "parse"}],
+            "requirements": {"min_ram_mb": 512, "gpu": "none", "backend": ["subprocess"], "network": False},
+            "subprocess": {"adapter": "adapter.py", "probe_import": "json"},
+            "python_requires": ["pillow"], "weight": "heavy", "maturity": "experimental",
+            "license": "MIT", "notes": "",
+            "prefetch": {"python": "pass", "approx_size": "约 1GB", "note": "权重"},
+        }
+        with self.assertRaises(ContractViolation):
+            validate_model(spec, "worker_manifest.v0.1.json")
+        spec["prefetch"]["verify"] = "import sys; sys.exit(0)"
+        validate_model(spec, "worker_manifest.v0.1.json")
+
+    def test_invalid_manifest_is_reported_not_silently_dropped(self):
+        with tempfile.TemporaryDirectory() as d:
+            broken = Path(d) / "broken"
+            broken.mkdir()
+            (broken / "worker.json").write_text('{"name": "broken", "handles": []}', encoding="utf-8")
+            registry = WorkerRegistry()
+            registry.load_external(extra_dirs=[Path(d)])
+        self.assertNotIn("broken", registry.workers)
+        self.assertTrue(
+            any("broken" in str(p) for p, _ in registry.manifest_errors),
+            f"不合规清单被静默丢弃: {registry.manifest_errors}",
+        )
+
     def test_network_worker_cannot_use_subprocess_backend(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

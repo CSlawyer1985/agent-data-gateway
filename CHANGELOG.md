@@ -5,6 +5,29 @@
 
 ## Unreleased
 
+### worker 清单纳入 Schema 治理；Agent 状态字段恢复恒有值
+
+- 新增 `models/worker_manifest.v0.1.json`：`worker.json` 此前是承重契约却没有规范 Schema
+  （`worker_protocol.v0.1.json` 管的是 stdio 消息格式，不是这张能力清单），只有 spec 04 散文约束，
+  字段拼错、类型写错都无人发现。现在 24 份随包清单全部受校验，`handles.kind` 对齐 `gateway.magic`
+  的词表、`role`/`weight`/`maturity`/`gpu`/`backend` 收敛为 enum（ADR 0001 决策 1）。
+- **声明了 `prefetch` 就必须提供 `verify`**：Schema 层强制。否则新增重型 worker 时漏写就绪判定，
+  会悄悄退回「报可用、运行时才发现权重没下载」的老问题。
+- 不合规清单从静默跳过改为显性可见：`load_external` 先校验再注册，失败的记进
+  `WorkerRegistry.manifest_errors`，`adg check` 打印路径与原因（JSON 输出新增 `manifest_errors`）。
+  此前 worker 会无声消失，用户只看到「这个格式没有处理路径」，不知道真正原因是清单写坏了。
+- Agent 契约修正：`get_ingestion_status` 的 `not_reliably_read[].kind` 恢复为恒有值
+  （包级排除项取 `"excluded"`）。上一版把它变成可为 null 而 `contract_version` 仍是 `"1"`，
+  等于同版本内静默收窄了保证。同时新增 `excluded_count`——包级排除不是 item，
+  `reliably_read_count + not_reliable_count` 会超出 `total_items`，给出这个数才能对账。
+- 验证：源码 257 项测试通过（新增 4 项：全部随包清单合规、prefetch 缺 verify 被拒、
+  不合规清单必须可见、状态项 kind 恒为字符串）；`adg verify` 27/28 不变；干净 venv 安装
+  wheel 后 38 个 worker 全部注册、0 清单错误（新 Schema 随包发布，运行时依赖它）。
+
+**已知未决**（本次只记录未改动）：`requirements.backend` 声明的是 worker 支持的后端，
+但编排器在存在 `docker.image` 时无条件按 docker 执行——docling/mineru 均声明 `["subprocess"]`
+且各自具备可用的 subprocess 路径，该路径当前不可达。改哪一边涉及隔离强度，待决策。
+
 ### worker 可用性探测补齐依赖与模型两个维度
 
 外部试用反馈：ovisocr2 被判 ✅ 但实际缺 `torchvision` 且模型未下载，批量跑到一半才炸。

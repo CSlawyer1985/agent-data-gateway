@@ -187,11 +187,13 @@ class PackageView:
         # 包级排除（如符号链接不入包）没有 item 记录，只在 integrity.unresolved_items 里——
         # 「哪些没读全」必须包含它们，否则与 report 口径不一致
         item_paths = {it.package_relative_path for it in self.manifest.items}
+        excluded_count = 0
         for u in self.manifest.integrity.get("unresolved_items", []):
             if u["package_relative_path"] not in item_paths:
+                excluded_count += 1
                 unreliable.append({
                     "package_relative_path": u["package_relative_path"],
-                    "kind": None,
+                    "kind": "excluded",  # 恒为字符串：消费方按 contract_version 1 解析，不该突然拿到 null
                     "status": "excluded",
                     "reason": u.get("reason"),
                 })
@@ -226,6 +228,9 @@ class PackageView:
             "by_status": dict(sorted(by_status.items())),
             "reliably_read_count": len(reliable),
             "not_reliable_count": len(unreliable),
+            # 包级排除不是 item，因此 reliably_read_count + not_reliable_count 会超出 total_items；
+            # 给出这个数，消费方才能对上账（减去它就回到 item 口径）
+            "excluded_count": excluded_count,
             "reliably_read": reliable,
             "not_reliably_read": unreliable,
             "unresolved_count": len(self.manifest.integrity.get("unresolved_items", [])),

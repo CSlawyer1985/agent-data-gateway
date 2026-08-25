@@ -32,9 +32,19 @@ worker → 编排器:  {"type":"parse_result","job_id":"...","status":"ok",
 
 ## worker manifest（workers/<name>/worker.json）
 
-声明：name/version/handles/requirements（min_ram_mb、gpu、backend、network）、docker（image）、subprocess（command、venv、probe）、weight（light/heavy）、maturity、license、notes。
+结构契约以 `models/worker_manifest.v0.1.json` 为准（ADR 0001 决策 1），本节只说语义。
+声明：name/version/handles/requirements（min_ram_mb、gpu、backend、network）、docker（image）、
+subprocess（adapter、venv、probe_import/probe_command）、python_requires、weight（light/heavy）、
+maturity、license、notes，以及可选的 auto_install(_reason) 与 prefetch。
 
 编排器据此做：可用性探测（`adg check`）、硬件匹配与降级决策（spec 08）、沙箱参数生成（spec 06）。
+
+清单先过 Schema 再注册。**不合规的清单不注册，但必须被看见**：注册表把它记进 `manifest_errors`，
+`adg check` 显示路径与原因。静默跳过等于这个 worker 从没存在过——用户只会看到"这个格式没有处理路径"，
+而不知道真正的原因是清单写坏了。
+
+`requirements.backend` 声明该 worker **支持**的后端，不是实际选用的后端：声明了 `docker.image` 的
+worker 由编排器无条件按 docker 执行，其 subprocess 路径当前不可达。
 
 `subprocess.probe_import` 只验证模块可被当前 Python 发现，不执行模块顶层代码。重型 ML 包冷导入可能超过一分钟，
 不能把冷启动耗时误判成“依赖未安装”；真实导入、模型初始化和推理由 Worker 执行路径负责，失败时按协议显性降级。

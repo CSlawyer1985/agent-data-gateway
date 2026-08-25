@@ -165,7 +165,8 @@ class WorkerAvailability:
 class WorkerRegistry:
     def __init__(self) -> None:
         self.workers: dict[str, WorkerInfo] = {}
-        self._availability_cache: dict[str, tuple[bool, str]] = {}
+        self.manifest_errors: list[tuple[Path, str]] = []  # 不合规清单：不注册，但必须能被看见
+        self._availability_cache: dict[str, tuple[bool, str, str]] = {}
         self._environment: Environment | None = None
 
     # ---------- 注册 ----------
@@ -176,7 +177,11 @@ class WorkerRegistry:
         self.workers[info.name] = info
 
     def load_external(self, extra_dirs: list[Path] | None = None) -> None:
-        """扫描 workers/*/worker.json（repo + $ADG_WORKERS_DIR + ~/.adg/workers）。"""
+        """扫描 workers/*/worker.json（repo + $ADG_WORKERS_DIR + ~/.adg/workers）。
+
+        清单先过 Schema 再注册。不合规的清单不注册但会记进 manifest_errors——
+        静默跳过等于这个 worker 从没存在过，用户只会看到"格式不支持"而不知道是清单写坏了。
+        """
         dirs: list[Path] = [REPO_ROOT / "workers"]
         env_dir = os.environ.get("ADG_WORKERS_DIR")
         if env_dir:
@@ -190,12 +195,14 @@ class WorkerRegistry:
                 try:
                     with open(manifest_path, encoding="utf-8") as f:
                         spec = json.load(f)
+                    validate_model(spec, "worker_manifest.v0.1.json")
                     info = self._info_from_spec(spec, manifest_path)
-                    if info.name in self.workers:
-                        continue  # lite 优先；先注册者胜
-                    self.workers[info.name] = info
-                except (json.JSONDecodeError, OSError, KeyError):
+                except (json.JSONDecodeError, OSError, KeyError, ContractViolation) as e:
+                    self.manifest_errors.append((manifest_path, f"{type(e).__name__}: {e}"))
                     continue
+                if info.name in self.workers:
+                    continue  # lite 优先；先注册者胜
+                self.workers[info.name] = info
 
     def _info_from_spec(self, spec: dict, manifest_path: Path) -> WorkerInfo:
         handles = spec.get("handles", [])

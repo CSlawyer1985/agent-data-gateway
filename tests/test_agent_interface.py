@@ -217,10 +217,16 @@ class AgentApiTest(unittest.TestCase):
         manifest = load_manifest(self.out)
         self.assertEqual(status["total_items"], len(manifest.items))
         self.assertTrue(status["all_items_accounted"])
+        # 包级排除不是 item，对账时要减掉，否则两个口径永远对不上
         self.assertEqual(
-            status["reliably_read_count"] + status["not_reliable_count"],
+            status["reliably_read_count"] + status["not_reliable_count"] - status["excluded_count"],
             len([i for i in manifest.items if i.status != "unsupported"]),
         )
+
+    def test_status_entry_kind_is_always_a_string(self):
+        """消费方按 contract_version 解析；同一版本内字段不能从恒有值变成可能为空。"""
+        for entry in self.view.get_ingestion_status()["not_reliably_read"]:
+            self.assertIsInstance(entry["kind"], str, entry)
 
     def test_unreliable_items_carry_reason(self):
         for entry in self.view.get_ingestion_status()["not_reliably_read"]:
