@@ -26,6 +26,7 @@
   "prefetch": {
     "python": "from paddleocr import PaddleOCRVL; PaddleOCRVL(pipeline_version='v1.6', device='cpu')",
     "approx_size": "约 2GB（随模型版本变化）",
-    "note": "PaddleOCR-VL-1.6 版面、OCR、表格与公式模型。"
+    "note": "PaddleOCR-VL-1.6 版面、OCR、表格与公式模型。",
+    "verify": "import os, pathlib, sys\nroot = pathlib.Path(os.environ.get('PADDLE_PDX_CACHE_HOME') or (pathlib.Path.home() / '.paddlex'))\nnames = [p.name for p in (root / 'official_models').iterdir()] if (root / 'official_models').is_dir() else []\nsys.exit(0 if any(n.startswith('PaddleOCR-VL') for n in names) else 1)\n"
   }
 }

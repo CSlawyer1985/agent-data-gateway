@@ -23,6 +23,7 @@
   "prefetch": {
     "python": "from huggingface_hub import snapshot_download; snapshot_download('ATH-MaaS/OvisOCR2')",
     "approx_size": "约 2GB",
-    "note": "OvisOCR2 0.9B 权重与处理器。"
+    "note": "OvisOCR2 0.9B 权重与处理器。",
+    "verify": "import sys\ntry:\n    from huggingface_hub import snapshot_download\nexcept Exception:\n    sys.exit(3)\ntry:\n    snapshot_download('ATH-MaaS/OvisOCR2', local_files_only=True)\nexcept Exception:\n    sys.exit(1)\n"
   }
 }

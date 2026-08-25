@@ -33,6 +33,7 @@
   "prefetch": {
     "python": "from paddleocr import PaddleOCR; PaddleOCR(lang='ch', use_doc_orientation_classify=False, use_doc_unwarping=False, use_textline_orientation=False)",
     "approx_size": "约 150MB（随 OCR 版本变化）",
-    "note": "PaddleOCR 中文检测/识别模型；预热参数与运行时一致。"
+    "note": "PaddleOCR 中文检测/识别模型；预热参数与运行时一致。",
+    "verify": "import os, pathlib, sys\nroot = pathlib.Path(os.environ.get('PADDLE_PDX_CACHE_HOME') or (pathlib.Path.home() / '.paddlex'))\nnames = [p.name for p in (root / 'official_models').iterdir()] if (root / 'official_models').is_dir() else []\nsys.exit(0 if any('det' in n for n in names) and any('rec' in n for n in names) else 1)\n"
   }
 }

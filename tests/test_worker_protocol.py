@@ -231,6 +231,74 @@ class RegistryTest(unittest.TestCase):
                 available, detail = WorkerRegistry().availability(worker, refresh=True)
         self.assertTrue(available, detail)
 
+    def _declared_worker(self, root: Path, **kw) -> WorkerInfo:
+        adapter = root / "adapter.py"
+        adapter.write_text("raise SystemExit(0)", encoding="utf-8")
+        return WorkerInfo(
+            name="declared", version="1", role="parse", kinds=["text"], formats=None,
+            requirements={}, backend="subprocess", adapter_path=adapter,
+            venv_python=Path(sys.executable), probe_import="json", **kw,
+        )
+
+    def test_declared_dependency_missing_is_not_available(self):
+        """probe_import 只验一个模块；声明的其余依赖缺失同样是运行时必然失败。"""
+        with tempfile.TemporaryDirectory() as d:
+            worker = self._declared_worker(Path(d), python_requires=["json", "no-such-pkg-xyz"])
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertFalse(status.available)
+        self.assertIn("no-such-pkg-xyz", status.detail)
+
+    def test_declared_dependencies_present_stay_available(self):
+        with tempfile.TemporaryDirectory() as d:
+            worker = self._declared_worker(Path(d), python_requires=["json"])
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertTrue(status.available, status.detail)
+
+    def test_missing_model_weights_are_not_available(self):
+        """声明了预取的 worker，权重缺失必须显性不可用，而不是运行时才炸。"""
+        with tempfile.TemporaryDirectory() as d:
+            worker = self._declared_worker(Path(d), model_verify="import sys; sys.exit(1)")
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertFalse(status.available)
+        self.assertEqual("model_missing", status.reason)
+
+    def test_undeterminable_model_check_does_not_claim_missing(self):
+        """探测脚本自身失败时只能说「查不出来」，不能反过来诬告用户没装模型。"""
+        with tempfile.TemporaryDirectory() as d:
+            worker = self._declared_worker(Path(d), model_verify="import sys; sys.exit(3)")
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertTrue(status.available, status.detail)
+
+    def test_availability_borrowed_from_current_interpreter_is_disclosed(self):
+        """没有 worker 专属 venv 时依赖来自当前解释器，detail 必须说出来。"""
+        with tempfile.TemporaryDirectory() as d:
+            adapter = Path(d) / "adapter.py"
+            adapter.write_text("raise SystemExit(0)", encoding="utf-8")
+            worker = WorkerInfo(
+                name="borrowed", version="1", role="parse", kinds=["text"], formats=None,
+                requirements={}, backend="subprocess", adapter_path=adapter,
+                venv_python=Path(d) / "absent/bin/python", probe_import="json",
+            )
+            status = WorkerRegistry().availability_status(worker, refresh=True)
+        self.assertTrue(status.available, status.detail)
+        self.assertIn("当前解释器", status.detail)
+
+    def test_declared_model_verify_snippets_are_executable(self):
+        """随包发布的 verify 脚本必须能跑并给出三态之一，不能是坏脚本。"""
+        import json as _json
+        import subprocess as _sp
+
+        manifests = sorted(Path("workers").glob("*/worker.json"))
+        self.assertTrue(manifests, "未找到 worker 清单")
+        for path in manifests:
+            spec = _json.loads(path.read_text(encoding="utf-8"))
+            verify = (spec.get("prefetch") or {}).get("verify")
+            if not verify:
+                continue
+            with self.subTest(worker=spec["name"]):
+                rc = _sp.run([sys.executable, "-c", verify], capture_output=True, timeout=120).returncode
+                self.assertIn(rc, (0, 1, 3), f"{spec['name']}: verify 退出码 {rc} 不在三态内")
+
     def test_network_worker_cannot_use_subprocess_backend(self):
         with tempfile.TemporaryDirectory() as d:
             root = Path(d)

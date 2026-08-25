@@ -48,29 +48,65 @@ def venv_python_of(venv_dir: Path) -> Path:
     return venv_dir / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
 
 
-def _runtime_versions(python: str, requirements: list[str]) -> dict[str, str]:
-    """读取声明依赖的实际安装版本；不把浮动安装伪装成可复现环境。"""
+_RESOLVE_SCRIPT = """
+import importlib.metadata as meta, importlib.util, json, sys
+out = {}
+for name in json.loads(sys.argv[1]):
+    try:
+        out[name] = meta.version(name)
+    except Exception:
+        # 没有分发元数据不等于没装：再按模块名找一次，只查发现不执行模块顶层（spec 04）
+        try:
+            found = importlib.util.find_spec(name.replace("-", "_")) is not None
+        except Exception:
+            found = False
+        out[name] = "" if found else None
+print(json.dumps(out, sort_keys=True))
+"""
+
+
+def _resolve_requirements(python: str, requirements: list[str]) -> tuple[dict[str, str], list[str]]:
+    """解析声明依赖的安装版本，返回 (已解析版本, 确定缺失的包)。
+
+    只读包元数据、必要时只做模块发现，不执行模块顶层代码——重型 ML 包冷导入可能超过一分钟，
+    不能把冷启动误判成依赖缺失（spec 04）。版本查不到但模块能找到的记为已装、不记版本，
+    不把浮动安装伪装成可复现环境。子进程本身失败时返回 ({}, [])：「查不出来」不等于「没装」。
+    """
     names = [match.group(0) for spec in requirements if (match := _REQUIREMENT_NAME.match(spec))]
     if not names:
-        return {}
-    script = (
-        "import importlib.metadata as m,json,sys; "
-        "names=json.loads(sys.argv[1]); "
-        "print(json.dumps({name:m.version(name) for name in names},sort_keys=True))"
-    )
+        return {}, []
     try:
         result = subprocess.run(
-            [python, "-c", script, json.dumps(names)],
+            [python, "-c", _RESOLVE_SCRIPT, json.dumps(names)],
             capture_output=True,
             text=True,
             errors="replace",
             timeout=30,
             check=True,
         )
-        versions = json.loads(result.stdout)
+        resolved = json.loads(result.stdout)
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired, json.JSONDecodeError):
-        return {}
-    return versions if isinstance(versions, dict) else {}
+        return {}, []
+    if not isinstance(resolved, dict):
+        return {}, []
+    versions = {name: v for name, v in resolved.items() if v}
+    missing = sorted(name for name, v in resolved.items() if v is None)
+    return versions, missing
+
+
+def _model_ready(python: str, verify: str) -> bool | None:
+    """模型就绪探测：True=就绪，False=确定缺失，None=查不出来。
+
+    退出码 1 表示确定缺失（脚本自己判定的），其余非零一律当作查不出来——
+    探测脚本自身出错时不能反过来诬告用户没装模型。
+    """
+    try:
+        rc = subprocess.run([python, "-c", verify], capture_output=True, timeout=120).returncode
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if rc == 0:
+        return True
+    return False if rc == 1 else None
 
 
 # 解析函数签名：(source_path: Path, *, kind: str, format: str|None, options: dict,
@@ -102,6 +138,7 @@ class WorkerInfo:
     python_requires: list[str] = field(default_factory=list)
     probe_import: str | None = None
     probe_command: list[str] | None = None
+    model_verify: str | None = None
     # docker
     docker_image: str | None = None
     manifest_path: Path | None = None
@@ -120,7 +157,7 @@ class WorkerInfo:
 @dataclass(frozen=True)
 class WorkerAvailability:
     available: bool
-    reason: str  # available / unavailable / hardware_unmet
+    reason: str  # available / unavailable / model_missing / hardware_unmet
     detail: str
     requirement_problems: tuple[str, ...] = ()
 
@@ -190,6 +227,7 @@ class WorkerRegistry:
             python_requires=spec.get("python_requires", []),
             probe_import=(sub.get("probe_import") if sub else None),
             probe_command=(sub.get("probe_command") if sub else None),
+            model_verify=(spec.get("prefetch") or {}).get("verify"),
             docker_image=dock.get("image"),
             manifest_path=manifest_path,
         )
@@ -215,9 +253,9 @@ class WorkerRegistry:
         key = f"{w.name}:{w.backend}"
         if refresh or key not in self._availability_cache:
             self._availability_cache[key] = self._check_availability(w, env)
-        runtime_ok, runtime_detail = self._availability_cache[key]
+        runtime_ok, runtime_detail, runtime_reason = self._availability_cache[key]
         if not runtime_ok:
-            return WorkerAvailability(False, "unavailable", runtime_detail)
+            return WorkerAvailability(False, runtime_reason, runtime_detail)
         actual_env = env
         if actual_env is None:
             if self._environment is None:
@@ -228,14 +266,14 @@ class WorkerRegistry:
             return WorkerAvailability(False, "hardware_unmet", "；".join(problems), tuple(problems))
         return WorkerAvailability(True, "available", runtime_detail)
 
-    def _check_availability(self, w: WorkerInfo, env: Environment | None) -> tuple[bool, str]:
+    def _check_availability(self, w: WorkerInfo, env: Environment | None) -> tuple[bool, str, str]:
         if w.backend == "subprocess" and w.requirements.get("network") is True:
-            return False, "需要联网的 worker 必须使用可执行网络策略的容器后端"
+            return False, "需要联网的 worker 必须使用可执行网络策略的容器后端", "unavailable"
         if w.backend == "inproc":
-            return True, "stdlib 内置"
+            return True, "stdlib 内置", "available"
         if w.backend == "docker":
             if not shutil.which("docker"):
-                return False, "docker 不在 PATH"
+                return False, "docker 不在 PATH", "unavailable"
             image = w.docker_image or ""
             rc = subprocess.run(
                 ["docker", "image", "inspect", image],
@@ -243,25 +281,23 @@ class WorkerRegistry:
                 timeout=15,
             ).returncode
             if rc != 0:
-                return False, f"docker 镜像未构建: {image}（见 workers/{w.name}/README）"
-            return True, "docker 镜像可用"
+                return False, f"docker 镜像未构建: {image}（见 workers/{w.name}/README）", "unavailable"
+            return True, "docker 镜像可用", "available"
         # subprocess
         if not w.adapter_path or not w.adapter_path.exists():
-            return False, "adapter 缺失"
+            return False, "adapter 缺失", "unavailable"
         if w.probe_command:
             exe = w.probe_command[0]
             if not shutil.which(exe):
-                return False, f"二进制不在 PATH: {exe}（adg setup --worker {w.name} 查看安装指引）"
+                return False, f"二进制不在 PATH: {exe}（adg setup --worker {w.name} 查看安装指引）", "unavailable"
             try:
                 rc = subprocess.run(w.probe_command, capture_output=True, timeout=15).returncode
             except (OSError, subprocess.TimeoutExpired):
-                return False, f"探测命令执行失败: {' '.join(w.probe_command)}"
+                return False, f"探测命令执行失败: {' '.join(w.probe_command)}", "unavailable"
             if rc != 0:
-                return False, f"探测命令返回非零: {' '.join(w.probe_command)}"
-        if w.venv_python and w.venv_python.exists():
-            py = str(w.venv_python)
-        else:
-            py = sys.executable  # 允许装进当前解释器（adg setup --into-current）
+                return False, f"探测命令返回非零: {' '.join(w.probe_command)}", "unavailable"
+        own_venv = bool(w.venv_python and w.venv_python.exists())
+        py = str(w.venv_python) if own_venv else sys.executable  # 允许装进当前解释器（adg setup --into-current）
         if w.probe_import:
             script = "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec(sys.argv[1]) else 1)"
             try:
@@ -271,12 +307,24 @@ class WorkerRegistry:
                     timeout=15,
                 ).returncode
             except (OSError, subprocess.TimeoutExpired):
-                return False, f"依赖探测失败: {w.probe_import}（adg setup --worker {w.name}）"
+                return False, f"依赖探测失败: {w.probe_import}（adg setup --worker {w.name}）", "unavailable"
             if rc != 0:
-                return False, f"依赖未安装: {w.probe_import}（adg setup --worker {w.name}）"
-        if w.python_requires and not w.runtime_versions:
-            w.runtime_versions = _runtime_versions(py, w.python_requires)
-        return True, "subprocess 可用"
+                return False, f"依赖未安装: {w.probe_import}（adg setup --worker {w.name}）", "unavailable"
+        # probe_import 只验一个模块；声明的其余依赖同样决定能否真的跑起来。
+        # 缺一个就是运行时必然失败，不能报「可用」（版本采集本来就要跑这一趟，不额外开销）。
+        if w.python_requires:
+            versions, missing = _resolve_requirements(py, w.python_requires)
+            if missing:
+                return False, f"依赖未安装: {'、'.join(missing)}（adg setup --worker {w.name}）", "unavailable"
+            if versions and not w.runtime_versions:
+                w.runtime_versions = versions
+        # 声明了模型预取的 worker，权重缺失同样是运行时必然失败，且多数上游不在运行时补下载
+        if w.model_verify:
+            ready = _model_ready(py, w.model_verify)
+            if ready is False:
+                return False, f"模型未就绪: 权重未预取（adg setup --worker {w.name}）", "model_missing"
+        detail = "subprocess 可用" if own_venv else "subprocess 可用（依赖在当前解释器，非 worker 专属 venv）"
+        return True, detail, "available"
 
 
 # ---------- 协议执行 ----------

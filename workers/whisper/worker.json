@@ -40,6 +40,7 @@
   "prefetch": {
     "python": "from faster_whisper import WhisperModel; WhisperModel('small', device='cpu', compute_type='int8')",
     "approx_size": "约 500MB",
-    "note": "faster-whisper small 模型。经 HF_ENDPOINT 走镜像；线路不通时按 ModelScope 手动路径处理。"
+    "note": "faster-whisper small 模型。经 HF_ENDPOINT 走镜像；线路不通时按 ModelScope 手动路径处理。",
+    "verify": "import sys\ntry:\n    from huggingface_hub import try_to_load_from_cache\nexcept Exception:\n    sys.exit(3)\nneed = ('model.bin', 'config.json')\nok = all(isinstance(try_to_load_from_cache('Systran/faster-whisper-small', f), str) for f in need)\nsys.exit(0 if ok else 1)\n"
   }
 }

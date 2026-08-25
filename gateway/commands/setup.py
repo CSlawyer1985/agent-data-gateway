@@ -159,7 +159,10 @@ def _prefetch_models(registry, env, only: set[str] | None = None) -> None:
         prefetch = manifest.get("prefetch")
         if only is not None and w.name not in only:
             continue
-        if prefetch and registry.availability(w, env)[0]:
+        # 「权重没预取」正是本函数要解决的事，不能因此把 worker 排除在预取之外；
+        # 依赖装好、只差模型的 worker 恰恰是目标。
+        status = registry.availability_status(w, env) if prefetch else None
+        if prefetch and (status.available or status.reason == "model_missing"):
             targets.append((w, prefetch))
     if not targets:
         return
