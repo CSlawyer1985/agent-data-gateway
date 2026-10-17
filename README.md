@@ -331,7 +331,7 @@ agent-data-gateway/
 - `promo/` 中的视频母版保留本地，网站发布使用 `site/assets/adg-promo.mp4`。
 - 紧急回退可在 Pages 的生产部署历史中选择上一个成功版本并执行 Rollback；本地手动发布可用 `wrangler pages deploy site --project-name agent-data-gateway --branch main`。
 
-验收记录、已知 CI 基线问题与回退步骤见 [官网部署说明](docs/deployment.md)。
+验收记录、CI 环境依赖修复与回退步骤见 [官网部署说明](docs/deployment.md)。
 
 ## 迭代日志
 
@@ -339,6 +339,7 @@ agent-data-gateway/
 
 | 日期 | 版本 | 类型 | 要点 |
 |------|------|------|------|
+| 2026-10-17 | v0.2.4 | CI 测试隔离 | profile 执行测试改用显式可靠 worker fixture，不再依赖开发机安装的 PDF 工具；保留原 12 项断言，新增无可靠 worker 时 status/report 不假成功的两项回归。生产代码、质量阈值、依赖与 CI 配置不变。 |
 | 2026-10-17 | v0.2.4 | 官网与开源发布 | 新增交互官网、80 秒宣传片与 README 配图；统一 MIT 许可证；官网使用 `adg.chenshi.ai`，由 Cloudflare Pages 连接 GitHub `main` 自动部署，发布目录为 `site/`。 |
 | 2026-08-24 | v0.2.4 | 锚点/拦截修复 | element_id 派生加入 source_id，anchor 回溯唯一指回原件（此前同 parser 同 locator 跨文件共享 ID，真实包一个 ID 最坏横跨 15 个源文件）；压缩包成员安全拦截显性化：被拦截容器不再计入可靠读取，明细进 status/manifest.md/report.md；status 与 report 的「哪些没读全」口径统一（补包级排除）；`.ost` 识别、docx_lite attachments 维度、csv_lite locator 小修复。已有产物需 `adg parse --force` 重跑生效 |
 | 2026-08-24 | v0.2.3 | 真实安装回归修复 | 修复 PaddleOCR 3.x、重型模块冷导入误报、VLM 脏 stdout、Ovis 缺 `torchvision`、`file://` 路径与尾部生成循环；图片占位符、OCR 多数低置信、截断/重复内容不再冒充可事实提取或可引用，可靠覆盖率为 0 的包不再报 pass。 |

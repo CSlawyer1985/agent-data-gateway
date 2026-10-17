@@ -28,7 +28,9 @@
 
 首次发布（2026-10-17）的验证结果：本机 `python3 -m unittest discover -s tests` 为 246 项通过；`python3 -m gateway.cli verify` 为 27/28 通过、0 失败、1 跳过；现有 setuptools 后端成功构建 wheel/sdist，MIT 许可元数据及 worker 打包清单正确。
 
-已知 CI 基线问题：Linux 环境的 `test_profile_execution.StatusTellsTheTruthTest` 中 `test_manifest_and_report_show_executed_and_skipped_chains`、`test_quality_may_claim_it_when_nothing_was_skipped` 失败。发布前的 [基线运行](https://github.com/CSlawyer1985/agent-data-gateway/actions/runs/32714865234) 与 [首次官网发布运行](https://github.com/CSlawyer1985/agent-data-gateway/actions/runs/39034933406) 在相同两项断言失败。官网发布没有修改核心代码、测试、CI 或依赖；远端后续 build/twine 步骤未执行，不能将整套 CI 标为通过。
+历史 CI 基线问题：Linux 环境的 `test_profile_execution.StatusTellsTheTruthTest` 中 `test_manifest_and_report_show_executed_and_skipped_chains`、`test_quality_may_claim_it_when_nothing_was_skipped` 失败。发布前的 [基线运行](https://github.com/CSlawyer1985/agent-data-gateway/actions/runs/32714865234) 与 [首次官网发布运行](https://github.com/CSlawyer1985/agent-data-gateway/actions/runs/39034933406) 在相同两项断言失败。首次官网发布没有修改核心代码、测试、CI 或依赖；当时远端后续 build/twine 步骤未执行。
+
+后续已定位并修复测试的环境依赖：该测试验证链执行契约，却隐式依赖开发机安装的 `pdfplumber` 等可选工具；干净 CI 的 `pdf_lite` 质量失败属于正确行为。现改用明确的可靠测试 worker，保留原 12 项断言；新增两项无可靠 worker 时不假成功的回归测试。生产代码、质量标准、CI 配置与依赖不变。当前检查状态请查看 [最新 main CI](https://github.com/CSlawyer1985/agent-data-gateway/actions?query=branch%3Amain)。
 
 ## 回退
 

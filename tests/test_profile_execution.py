@@ -10,15 +10,61 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from gateway import cli
 from gateway.selftest import make_pdf_digital_with_image
+from gateway.workers import WorkerInfo, WorkerRegistry
+from packs.legal import register_lite_parsers
 
 
 def _run(argv: list[str]) -> int:
     out, err = io.StringIO(), io.StringIO()
     with contextlib.redirect_stdout(out), contextlib.redirect_stderr(err):
         return cli.main(argv)
+
+
+def _lite_registry() -> WorkerRegistry:
+    registry = WorkerRegistry()
+    register_lite_parsers(registry)
+    return registry
+
+
+def _profile_pdf_fixture(source_path: Path, **_kwargs) -> dict:
+    """只接受本文件的已知 PDF，模拟可靠 worker 的协议产物，不冒充真实解析器。"""
+    if source_path.read_bytes() != make_pdf_digital_with_image():
+        raise ValueError("profile fixture worker 仅支持已知测试 PDF")
+    return {
+        "parser_name": "profile_fixture",
+        "parser_version": "test",
+        "content": {"blocks": [{
+            "block_type": "page", "index": 0,
+            "elements": [{
+                "type": "paragraph",
+                "text": "Agent Data Gateway digital text layer sample sentence. " * 16,
+                "locator": {"system": "page_bbox", "page": 0},
+            }],
+        }]},
+        "quality_dims": {
+            "discovery": "pass", "type_detection": "pass", "text_extraction": "pass",
+            "layout_preservation": "pass", "metadata": "pass", "source_anchoring": "pass",
+        },
+    }
+
+
+def _profile_registry() -> WorkerRegistry:
+    """固定链的前提：重工具不可用，轻工具成功；不发现或执行本机外部 worker。"""
+    registry = _lite_registry()
+    # 不用 register_lite：它会把 weight 强制改成 light，掩盖 fast 的重工具过滤。
+    registry.workers["docling"] = WorkerInfo(
+        name="docling", version="test", role="parse", kinds=["pdf"], formats=None,
+        requirements={}, backend="subprocess", weight="heavy",  # 无 adapter，明确不可用
+    )
+    registry.register_lite(WorkerInfo(
+        name="pypdf", version="test", role="parse", kinds=["pdf"], formats=None,
+        requirements={}, backend="inproc", parse_fn=_profile_pdf_fixture,
+    ))
+    return registry
 
 
 class _ProfileFixture(unittest.TestCase):
@@ -36,7 +82,8 @@ class _ProfileFixture(unittest.TestCase):
         for profile in ("fast", "balanced", "quality"):
             out = root / f"out_{profile}"
             _run(["scan", str(cls.pkg), "--out", str(out)])
-            _run(["parse", str(cls.pkg), "--out", str(out), "--no-index", "--profile", profile])
+            with patch("gateway.commands.parse.build_registry", side_effect=_profile_registry):
+                _run(["parse", str(cls.pkg), "--out", str(out), "--no-index", "--profile", profile])
             cls.outs[profile] = out
             cls.results[profile] = json.loads((out / "manifest.json").read_text(encoding="utf-8"))
 
@@ -147,6 +194,38 @@ class StatusTellsTheTruthTest(_ProfileFixture):
                 self.assertIn("pdf-visual", text)
                 self.assertIn("未执行", text)
                 self.assertIn("原因 `profile_fast`", text)
+
+
+class NoReliablePDFWorkerTest(unittest.TestCase):
+    """quality 表示多跑工作流；没有可靠 parser 时仍不得声称读全。"""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        self.pkg, self.out = root / "pkg", root / "out"
+        self.pkg.mkdir()
+        (self.pkg / "带图合同.pdf").write_bytes(make_pdf_digital_with_image())
+        self.assertEqual(_run(["scan", str(self.pkg), "--out", str(self.out)]), 0)
+        with patch("gateway.commands.parse.build_registry", side_effect=_lite_registry):
+            self.assertEqual(_run([
+                "parse", str(self.pkg), "--out", str(self.out), "--no-index", "--profile", "quality",
+            ]), 2)
+
+    def test_quality_without_reliable_worker_never_claims_read(self):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = cli.main(["status", str(self.pkg), "--out", str(self.out)])
+        self.assertEqual(code, 1)
+        self.assertNotIn("已读全", out.getvalue())
+        self.assertIn("未可靠读取 1 项", out.getvalue())
+
+    def test_report_without_reliable_worker_stays_failed(self):
+        self.assertEqual(_run(["report", str(self.pkg), "--out", str(self.out)]), 2)
+        report = json.loads((self.out / "reports" / "report.json").read_text(encoding="utf-8"))
+        self.assertEqual(report["overall"], "fail")
+        self.assertEqual(report["reliably_read"], 0)
+        self.assertEqual(report["total_items"], 1)
 
 
 if __name__ == "__main__":

@@ -5,6 +5,13 @@
 
 ## Unreleased
 
+### 2026-10-17：CI 的 profile 测试不再依赖开发机环境
+
+- 根因：`tests/test_profile_execution.py` 的 fixture 自动发现并执行本机可选 PDF worker；开发机安装了 `pdfplumber`，干净 CI 只有内置 `pdf_lite`，后者如实报告版面质量失败，所以“已读全”和 report 成功的两个场景没有满足前置条件。
+- 在无本地 worker venv 的源码副本与独立 stdlib Python 中复现了同样两项失败；fixture 改为在注册表边界注入专属可靠测试 worker，并显式保留不可用重型工具声明，继续执行真实路由、调度、质量定稿和状态/报告逻辑。
+- 原有 12 项测试主体及断言不变；新增两个仅内置 parser 场景，固定 status 不声称读全、退出 1，report 整体失败、可靠计数 0、退出 2。
+- 不修改生产代码、质量阈值、CI 步骤、依赖或 lockfile；完整验证与云端状态以该提交的 GitHub Actions 记录为准。
+
 ### 2026-10-17：官网与开源发布
 
 - 新增 `site/` 交互官网、80 秒网络版宣传片、团队头像与海报，补充 `docs/assets/readme/` 配图。
