@@ -66,16 +66,18 @@ let played=false;new IntersectionObserver(es=>{es.forEach(e=>{if(e.isIntersectin
 const io=new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target)}}),{threshold:.15});
 document.querySelectorAll('.reveal').forEach((el,i)=>{el.style.transitionDelay=(i%4)*80+'ms';io.observe(el)});
 new IntersectionObserver((es,o)=>es.forEach(e=>{if(!e.isIntersecting)return;o.disconnect();e.target.querySelectorAll('b[data-n]').forEach(b=>{const n=+b.dataset.n,d=+(b.dataset.d||0),s=b.dataset.s||'';const t0=performance.now();const f=now=>{const k=RM?1:Math.min(1,(now-t0)/1600);b.textContent=(n*(1-Math.pow(1-k,3))).toFixed(d)+s;if(k<1)requestAnimationFrame(f)};requestAnimationFrame(f)})}),{threshold:.4}).observe(document.getElementById('stats'));
-// terminal typing
-const L=[['c','# 安装（推荐 uv tool；也可 python3 -m pip install agent-data-gateway）'],['p','uv tool install agent-data-gateway'],['p','adg setup --auto'],['c','# 自动选源 + 安装轻量自动档 worker'],['p','adg check'],['p','adg parse ./案件材料'],['c','# 自动特征路由 + 降级，结束后顺手建好检索索引'],['p','adg status ./案件材料'],['c','# 哪些文件还没被可靠读取'],['p','adg search ./案件材料 "担保 效力"'],['p','adg anchor ./案件材料 <element_id>'],['c','# 把命中回溯到原件位置，确认能不能引用'],['p','adg report ./案件材料']];
-const tb=document.getElementById('termBody');
-const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
-function full(){return L.map(([k,s])=>k=='p'?`<span class="p">$</span> ${esc(s)}`:`<span class="c">${esc(s)}</span>`).join('\n')}
-let typed=false;new IntersectionObserver(es=>es.forEach(e=>{if(!e.isIntersecting||typed)return;typed=true;if(RM){tb.innerHTML=full();return}
- let li=0,ci=0,out=[];const tick=()=>{if(li>=L.length){tb.innerHTML=full()+'\n<span class="p">$</span> <span class="cursor"></span>';return}
-  const [k,s]=L[li];ci+=k=='c'?6:2;const cur=s.slice(0,ci);const line=k=='p'?`<span class="p">$</span> ${esc(cur)}`:`<span class="c">${esc(cur)}</span>`;
-  tb.innerHTML=out.concat(line).join('\n')+'<span class="cursor"></span>';if(ci>=s.length){out.push(line);li++;ci=0;setTimeout(tick,k=='p'?260:80)}else setTimeout(tick,28)};tick()}),{threshold:.4}).observe(tb);
-document.getElementById('copyAll').onclick=e=>{const t=L.filter(l=>l[0]=='p'&&!l[1].includes('<element_id>')).map(l=>l[1]).join('\n');navigator.clipboard&&navigator.clipboard.writeText(t).then(()=>{e.target.textContent='已复制 ✓';setTimeout(()=>e.target.textContent='复制命令',1500)})};
+// Copy the visible installation instruction as one complete prompt for a local Agent.
+const copyButton=document.getElementById('copyAll'),copyStatus=document.getElementById('copyStatus');
+copyButton.onclick=async()=>{
+ try{
+  await navigator.clipboard.writeText(document.getElementById('installPrompt').textContent.trim());
+  copyButton.textContent='已复制 ✓';
+  copyStatus.textContent='已复制完整指令，请粘贴给你的本机 Agent。';
+  setTimeout(()=>copyButton.textContent='复制给 Agent',1500);
+ }catch{
+  copyStatus.textContent='浏览器未允许复制，请手动选中上方整段指令，再粘贴给 Agent。';
+ }
+};
 // nav highlight
 const links=[...document.querySelectorAll('.fnav a[href^="#"]')];
 new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')=='#'+e.target.id&&a.className!='brand'))}),{rootMargin:'-45% 0px -50% 0px'}).observe&&document.querySelectorAll('section[id]').forEach(s=>new IntersectionObserver(es=>es.forEach(e=>{if(e.isIntersecting)links.forEach(a=>a.classList.toggle('on',a.getAttribute('href')=='#'+s.id))}),{rootMargin:'-45% 0px -50% 0px'}).observe(s));

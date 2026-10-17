@@ -324,7 +324,7 @@ agent-data-gateway/
 
 [`adg.chenshi.ai`](https://adg.chenshi.ai/) 是静态介绍站；材料解析继续在用户本机运行。
 
-- `site/`：独立部署的 HTML、CSS、JavaScript、头像、海报和网络版宣传片；无构建步骤。
+- `site/`：独立部署的 HTML、CSS、JavaScript、头像、海报和网络版宣传片；无构建步骤。官网[安装入口](https://adg.chenshi.ai/#install)提供一句可复制给本机 Agent 的指令，涵盖安装 CLI、持久记忆及首次处理前检测/补装相应工具。
 - `docs/assets/readme/`：README 使用的配图。
 - Cloudflare Pages 项目 `agent-data-gateway` 连接本仓库 `main`；构建命令留空，输出目录为 `site`。后续推送自动发布。
 - 自定义域名 `adg.chenshi.ai` 指向 Pages 分配的 `pages.dev` 地址。只上传 `site/`，不上传仓库根目录或本地材料。
@@ -339,6 +339,7 @@ agent-data-gateway/
 
 | 日期 | 版本 | 类型 | 要点 |
 |------|------|------|------|
+| 2026-10-17 | v0.2.4 | Agent 安装入口 | 官网导航与首屏按钮统一指向安装板块；一句话复制给 Agent，串联安装验证 CLI、写入持久记忆、首次处理每类材料前检测并补装工具；保留旧 `#start` 锚点别名。 |
 | 2026-10-17 | v0.2.4 | CI 测试隔离 | profile 执行测试改用显式可靠 worker fixture，不再依赖开发机安装的 PDF 工具；保留原 12 项断言，新增无可靠 worker 时 status/report 不假成功的两项回归。生产代码、质量阈值、依赖与 CI 配置不变。 |
 | 2026-10-17 | v0.2.4 | 官网与开源发布 | 新增交互官网、80 秒宣传片与 README 配图；统一 MIT 许可证；官网使用 `adg.chenshi.ai`，由 Cloudflare Pages 连接 GitHub `main` 自动部署，发布目录为 `site/`。 |
 | 2026-08-24 | v0.2.4 | 锚点/拦截修复 | element_id 派生加入 source_id，anchor 回溯唯一指回原件（此前同 parser 同 locator 跨文件共享 ID，真实包一个 ID 最坏横跨 15 个源文件）；压缩包成员安全拦截显性化：被拦截容器不再计入可靠读取，明细进 status/manifest.md/report.md；status 与 report 的「哪些没读全」口径统一（补包级排除）；`.ost` 识别、docx_lite attachments 维度、csv_lite locator 小修复。已有产物需 `adg parse --force` 重跑生效 |

@@ -30,7 +30,7 @@
 
 历史 CI 基线问题：Linux 环境的 `test_profile_execution.StatusTellsTheTruthTest` 中 `test_manifest_and_report_show_executed_and_skipped_chains`、`test_quality_may_claim_it_when_nothing_was_skipped` 失败。发布前的 [基线运行](https://github.com/CSlawyer1985/agent-data-gateway/actions/runs/32714865234) 与 [首次官网发布运行](https://github.com/CSlawyer1985/agent-data-gateway/actions/runs/39034933406) 在相同两项断言失败。首次官网发布没有修改核心代码、测试、CI 或依赖；当时远端后续 build/twine 步骤未执行。
 
-后续已定位并修复测试的环境依赖：该测试验证链执行契约，却隐式依赖开发机安装的 `pdfplumber` 等可选工具；干净 CI 的 `pdf_lite` 质量失败属于正确行为。现改用明确的可靠测试 worker，保留原 12 项断言；新增两项无可靠 worker 时不假成功的回归测试。生产代码、质量标准、CI 配置与依赖不变。当前检查状态请查看 [最新 main CI](https://github.com/CSlawyer1985/agent-data-gateway/actions?query=branch%3Amain)。
+后续已定位并修复测试的环境依赖：该测试验证链执行契约，却隐式依赖开发机安装的 `pdfplumber` 等可选工具；干净 CI 的 `pdf_lite` 质量失败属于正确行为。现改用明确的可靠测试 worker，保留原 12 项断言；新增两项无可靠 worker 时不假成功的回归测试。生产代码、质量标准、CI 配置与依赖不变。修复已通过本机与独立 stdlib 环境各 248 项测试，并通过 [GitHub Python 3.10/3.12 完整 CI](https://github.com/CSlawyer1985/agent-data-gateway/actions/runs/39037721890)（测试、构建、twine 与 worker 打包清单检查）。当前检查状态请查看 [最新 main CI](https://github.com/CSlawyer1985/agent-data-gateway/actions?query=branch%3Amain)。
 
 ## 回退
 

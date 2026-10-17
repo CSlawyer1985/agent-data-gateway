@@ -18,7 +18,7 @@
 <body>
 <nav class="fnav" aria-label="页面导航">
   <a href="#top" class="brand">ADG</a>
-  <a href="#pain">痛点</a><a href="#gate">第一关</a><a href="#pipe">管线</a><a href="#film">宣传片</a><a href="#start">上手</a><a href="#team">团队</a>
+  <a href="#pain">痛点</a><a href="#gate">第一关</a><a href="#pipe">管线</a><a href="#film">宣传片</a><a href="#install">安装</a><a href="#team">团队</a>
   <a class="gh" href="https://github.com/CSlawyer1985/agent-data-gateway" target="_blank" rel="noopener">GitHub ↗</a>
 </nav>
 
@@ -30,7 +30,7 @@
     <p class="lead">模型读不全，再强的模型也没有用。<br>ADG 把一个格式极杂的案件材料包，<b>可靠地</b>变成 Agent 可消费、可追溯、可信的数据。</p>
     <div class="cta">
       <a class="btn primary" href="#film">▶ 看 80 秒宣传片</a>
-      <a class="btn" href="#start">三条命令上手</a>
+      <a class="btn" href="#install">让 Agent 帮你安装</a>
     </div>
     <p class="scrollhint mono">向下滚动 · 看混乱如何被整理 ↓</p>
   </div>
@@ -149,15 +149,17 @@
   </div>
 </section>
 
-<section id="start" class="sec dark">
+<section id="install" class="sec dark">
+  <span id="start" class="anchor-alias" aria-hidden="true"></span>
   <div class="wrap">
-    <p class="eyebrow mono">06 · QUICK START</p>
-    <h2>三条命令，<em>跑通一个材料包。</em></h2>
+    <p class="eyebrow mono">06 · INSTALL WITH YOUR AGENT</p>
+    <h2>复制一句话，<em>让 Agent 帮你装好。</em></h2>
+    <p class="note">把下面这句话发给 Claude Code、Codex 等本机 Agent：安装工具、记住以后怎么用，首次处理时自动补齐所需工具。</p>
     <div class="term">
-      <div class="term-bar"><i></i><i></i><i></i><span class="mono">zsh — adg</span><button class="copy" id="copyAll" title="复制可直接执行的命令；anchor 示例需替换 element_id 后单独运行">复制命令</button></div>
-      <pre class="mono" id="termBody"></pre>
+      <div class="term-bar"><i></i><i></i><i></i><span class="mono">Agent 安装指令</span><button class="copy" id="copyAll" type="button">复制给 Agent</button></div>
+      <p class="install-prompt" id="installPrompt">请参考官方仓库 https://github.com/CSlawyer1985/agent-data-gateway，在本机安装并验证 ADG CLI（包名 agent-data-gateway），将“以后遇到 PDF、Office、邮件、音视频、图纸或压缩包等材料时，优先调用 ADG 做材料摄取、完整性核验和来源追溯”写入你的持久记忆或项目规则，并在首次处理每类材料前运行 adg check 检查相应工具，缺少时按官方文档用 adg setup --worker 安装对应 worker 及依赖后再处理，最后报告安装、自检和记忆写入结果，无法完成的步骤请如实说明。</p>
     </div>
-    <p class="fine">需要 Python 3.10+。复制命令不含需替换 <code>element_id</code> 的 anchor 示例。包已发布到 PyPI；也可 <code>python3 -m pip install agent-data-gateway</code>。重型 worker（Whisper、PaddleOCR、Docling、MinerU 等）不进一键档，按需 <code>adg setup --worker &lt;名称&gt;</code>。exit code 三态：0 = pass / 1 = 完成但有未读全项 / 2 = fail。</p>
+    <p class="fine" id="copyStatus" role="status">安装和处理在本机完成；记忆保存方式取决于 Agent 环境，请让 Agent 确认是否已写入。以后遇到相应材料，直接交给它处理。</p>
   </div>
 </section>
 
