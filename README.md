@@ -331,6 +331,8 @@ agent-data-gateway/
 - `promo/` 中的视频母版保留本地，网站发布使用 `site/assets/adg-promo.mp4`。
 - 紧急回退可在 Pages 的生产部署历史中选择上一个成功版本并执行 Rollback；本地手动发布可用 `wrangler pages deploy site --project-name agent-data-gateway --branch main`。
 
+验收记录、已知 CI 基线问题与回退步骤见 [官网部署说明](docs/deployment.md)。
+
 ## 迭代日志
 
 > **自动同步约定**：每次迭代（功能新增、缺陷修复、验证结果）完成后，由 Claude 自动在本节追加条目并推送。条目格式：`日期 | 版本 | 类型 | 要点`。历史详情见 `CHANGELOG.md`。

@@ -11,6 +11,7 @@
 - 官网许可文案与用户已更新的 MIT `LICENSE`、项目元数据保持一致；README 使用正式主页 `https://adg.chenshi.ai/`。
 - 发布采用 Cloudflare Pages + GitHub `main` 自动部署，输出目录为 `site/`，无构建步骤；仅网站目录进入 CDN，本地输入、工作底稿、规则与视频母版不上传。
 - 官网扫描 PDF 示例校准为 `quality` 档并跑 VLM；复制命令排除需替换 `<element_id>` 的示例，避免直接粘贴引发 shell 重定向语法错误。
+- 增加 `docs/deployment.md` 记录配置、验收及回退方法；公开记录发布前已存在的 Linux CI 两项断言失败，不修改测试或核心代码。
 - 为主页补充 canonical 与 Open Graph 分享元数据；项目简介、主页与主题标签同步至 GitHub。
 
 ### 许可证变更为 MIT
