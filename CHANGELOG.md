@@ -5,6 +5,18 @@
 
 ## Unreleased
 
+### 2026-10-17：官网与开源发布
+
+- 新增 `site/` 交互官网、80 秒网络版宣传片、团队头像与海报，补充 `docs/assets/readme/` 配图。
+- 官网许可文案与用户已更新的 MIT `LICENSE`、项目元数据保持一致；README 使用正式主页 `https://adg.chenshi.ai/`。
+- 发布采用 Cloudflare Pages + GitHub `main` 自动部署，输出目录为 `site/`，无构建步骤；仅网站目录进入 CDN，本地输入、工作底稿、规则与视频母版不上传。
+- 官网扫描 PDF 示例校准为 `quality` 档并跑 VLM；复制命令排除需替换 `<element_id>` 的示例，避免直接粘贴引发 shell 重定向语法错误。
+- 为主页补充 canonical 与 Open Graph 分享元数据；项目简介、主页与主题标签同步至 GitHub。
+
+### 许可证变更为 MIT
+
+- 项目许可证由 Apache-2.0 改为 MIT：仓库根目录新增 `LICENSE`（Copyright (c) 2026 ADG Contributors），`pyproject.toml` 的 `license` 改为 `MIT` 并声明 `license-files`，README 徽章与许可证章节同步。GPL/AGPL 等第三方工具仍以独立进程隔离调用，各自许可以 `workers/*/worker.json` 的 `license` 字段为准。
+
 ### v0.2.4：锚点唯一性与安全拦截显性化
 
 - element_id 派生加入 source_id（spec 07 同步）：此前同 parser/同 locator 的不同原件共享同一

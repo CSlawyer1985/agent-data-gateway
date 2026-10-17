@@ -1,7 +1,7 @@
 # Agent Data Gateway
 
 <p align="center">
-  <a href="https://github.com/CSlawyer1985/agent-data-gateway/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="https://github.com/CSlawyer1985/agent-data-gateway/blob/main/LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="License"></a>
   <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/version-v0.2.4-brightgreen" alt="Version"></a>
   <a href="https://github.com/CSlawyer1985/agent-data-gateway"><img src="https://img.shields.io/badge/PRs-welcome-brightgreen.svg" alt="PRs Welcome"></a>
   <br>
@@ -11,6 +11,10 @@
   <br>
   合同 · 证据 · 判决书 · 财务表 · 聊天记录 · 邮件 · 音视频 · 图纸 · 压缩包
 </p>
+
+<p align="center"><img src="docs/assets/readme/adg-hero-banner.jpg" alt="ADG：数据处理，是第一关" width="880"></p>
+
+<p align="center">项目主页：<a href="https://adg.chenshi.ai/">adg.chenshi.ai</a> · 80 秒宣传片：<a href="https://adg.chenshi.ai/#film">在线观看</a></p>
 
 ---
 
@@ -35,6 +39,11 @@
 | 来源无法回溯 | 引用时找不到原文位置 |
 | 解析器悄悄换成了低质量兜底 | 报告看起来正常，实际不可引用 |
 
+<p align="center"><img src="docs/assets/readme/pain-data-complexity.jpg" alt="程序员的数据与法律人的数据，复杂度不在一个量级" width="760"></p>
+
+<p align="center"><img src="docs/assets/readme/first-gate-comparison.jpg" alt="同一份材料过没过第一关的对比" width="760"></p>
+<p align="center"><sub>「第一关」对比（示意，样例内容为演示用）</sub></p>
+
 开源生态（MinerU / Docling / Tika / Whisper / PaddleOCR 等）解决的是 **Document Parsing**——怎么把一个文件解析出来。本工具做 **Agent Ingestion**——怎么把一个案件材料包**可靠地**变成 Agent 可消费、可追溯、可信的数据。
 
 ## 当前状态（v0.2.4）
@@ -51,6 +60,8 @@
 | **资料利用率** | 📋 设计已定稿未实现：增益轨（多视角并行）+ 信号探测度量 + 快速/均衡/质量三档成本控制（[ADR 0002](docs/adr/0002-utilization-as-first-class-goal.md) / [spec 11](docs/spec/11-utilization.md)） |
 | **云端扩展** | 📋 设计预留（远程 worker 后端、云端模型路由），未实现 |
 | **Extended Packs** | 📋 规划（CAD 深入/GIS/DICOM 等），未发布 |
+
+<p align="center"><img src="docs/assets/readme/real-world-results.jpg" alt="真实混合材料包实测：23 个物理文件、41 items、覆盖率 97.6%" width="760"></p>
 
 已知限制与已知问题见下方「迭代日志」最新条目；全部规格以 `docs/spec/` 与 `models/*.v0.1.json` 为准。
 
@@ -89,6 +100,9 @@
   三身份 source/rendition/run + 八维质量 + fitness + 锚点 + 谱系
 ```
 
+<p align="center"><img src="docs/assets/readme/pipeline-routing.jpg" alt="八步编排与特征路由：不同材料流向各自的 worker" width="880"></p>
+<p align="center"><sub>worker 分组示意；实际降级链以 <code>adg routes</code> 为准</sub></p>
+
 ### 核心机制
 
 | 机制 | 实现 | 解决的问题 |
@@ -102,6 +116,9 @@
 | **处理谱系** | 每次解析记录 operation/tool/exit_code/哈希，链式可查 | 产物来源与处理历史不可追溯 |
 | **隐私保护** | 产物默认只含包内相对路径，绝对路径只在本地私有日志；输出前 scrub 兜底清洗 | 客户名、目录结构、磁盘位置不泄露 |
 | **检索与回溯** | 元素级 SQLite/FTS5 索引（中文逐字切分）+ `adg anchor` 回溯；命中带 `quotable` 标注 | Agent 查得到、引得回，且知道哪句不能引 |
+
+<p align="center"><img src="docs/assets/readme/quality-anchors-security.jpg" alt="八维质量、fitness 五旗标、来源锚点与安全拦截" width="880"></p>
+<p align="center"><sub>雷达图数值为示意</sub></p>
 
 ## 格式范围与总路由表
 
@@ -234,6 +251,8 @@ adg get ./案件材料 "合同.pdf"        # 取出解析产物、质量八维�
 adg verify                   # 跑验证矩阵自检
 ```
 
+<p align="center"><img src="docs/assets/readme/quick-start-terminal.jpg" alt="快速开始命令" width="760"></p>
+
 `adg parse` 结束后会顺手建好检索索引（`--no-index` 可关），因此 `search/anchor` 开箱即用。
 
 所有命令 stdout 只打一行摘要，详情写 `<out>/`（默认 `./adg-output/<包名>/`）下的 Markdown/JSON。exit code 三态：`0`=pass / `1`=pass_with_warnings / `2`=fail。
@@ -301,12 +320,24 @@ agent-data-gateway/
 | [0004 利用率不是一个可计算的比值](docs/adr/0004-utilization-is-not-a-ratio.md) | 撤销利用率度量：分子需要 ground truth，有 ground truth 就不需要这些工具。改输出「探测到什么 + 跑过什么」两组事实，不做除法、不评判结果好坏 |
 | [0005 工作流由 profile 选择](docs/adr/0005-workflow-selection-by-profile.md) | 机制与策略分离（Linux "mechanism, not policy"）：ADG 提供识别/路由/执行/记录，跑几条链与哪个结果可用由调用方经 `--profile` 决定。取代 ADR 0002 的「信号缺口驱动」，不新增名词、不加第四种 action |
 
+## 官网部署
+
+[`adg.chenshi.ai`](https://adg.chenshi.ai/) 是静态介绍站；材料解析继续在用户本机运行。
+
+- `site/`：独立部署的 HTML、CSS、JavaScript、头像、海报和网络版宣传片；无构建步骤。
+- `docs/assets/readme/`：README 使用的配图。
+- Cloudflare Pages 项目 `agent-data-gateway` 连接本仓库 `main`；构建命令留空，输出目录为 `site`。后续推送自动发布。
+- 自定义域名 `adg.chenshi.ai` 指向 Pages 分配的 `pages.dev` 地址。只上传 `site/`，不上传仓库根目录或本地材料。
+- `promo/` 中的视频母版保留本地，网站发布使用 `site/assets/adg-promo.mp4`。
+- 紧急回退可在 Pages 的生产部署历史中选择上一个成功版本并执行 Rollback；本地手动发布可用 `wrangler pages deploy site --project-name agent-data-gateway --branch main`。
+
 ## 迭代日志
 
 > **自动同步约定**：每次迭代（功能新增、缺陷修复、验证结果）完成后，由 Claude 自动在本节追加条目并推送。条目格式：`日期 | 版本 | 类型 | 要点`。历史详情见 `CHANGELOG.md`。
 
 | 日期 | 版本 | 类型 | 要点 |
 |------|------|------|------|
+| 2026-10-17 | v0.2.4 | 官网与开源发布 | 新增交互官网、80 秒宣传片与 README 配图；统一 MIT 许可证；官网使用 `adg.chenshi.ai`，由 Cloudflare Pages 连接 GitHub `main` 自动部署，发布目录为 `site/`。 |
 | 2026-08-24 | v0.2.4 | 锚点/拦截修复 | element_id 派生加入 source_id，anchor 回溯唯一指回原件（此前同 parser 同 locator 跨文件共享 ID，真实包一个 ID 最坏横跨 15 个源文件）；压缩包成员安全拦截显性化：被拦截容器不再计入可靠读取，明细进 status/manifest.md/report.md；status 与 report 的「哪些没读全」口径统一（补包级排除）；`.ost` 识别、docx_lite attachments 维度、csv_lite locator 小修复。已有产物需 `adg parse --force` 重跑生效 |
 | 2026-08-24 | v0.2.3 | 真实安装回归修复 | 修复 PaddleOCR 3.x、重型模块冷导入误报、VLM 脏 stdout、Ovis 缺 `torchvision`、`file://` 路径与尾部生成循环；图片占位符、OCR 多数低置信、截断/重复内容不再冒充可事实提取或可引用，可靠覆盖率为 0 的包不再报 pass。 |
 | 2026-08-24 | v0.2.2 | PDF/OCR 与契约修复 | 接入 PaddleOCR-VL-1.6、OvisOCR2；真实模型验收前标记 `protocol-smoke`，仅进入 quality/显式链。补完整 Schema 落盘前录取、`low_quality` 降级、统一硬件判定、subprocess 真实安全边界、运行依赖谱系与 wheel 发布门禁。 |
@@ -326,4 +357,6 @@ agent-data-gateway/
 
 ## 许可证
 
-Apache-2.0。注意：部分 worker 适配器调用的工具是 GPL/AGPL（extract-msg、LibreDWG、MinerU）——它们隔离为独立进程调用，不链入编排器，详见各 `workers/*/worker.json` 的 `license` 字段。
+MIT（见 [LICENSE](LICENSE)）。注意：部分 worker 适配器调用的工具是 GPL/AGPL（extract-msg、LibreDWG、MinerU）——它们隔离为独立进程调用，不链入编排器，详见各 `workers/*/worker.json` 的 `license` 字段。
+
+<p align="center"><img src="docs/assets/readme/team.jpg" alt="ADG 由陈石与 Luke 共同主导" width="760"></p>

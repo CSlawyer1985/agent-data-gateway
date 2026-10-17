@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ADG · Agent Data Gateway —— 数据处理，是第一关</title>
+<meta name="description" content="ADG（Agent Data Gateway）：让 Agent 获得可信、完整、可追溯的数据输入。面向法律人与专业服务者的复杂材料包的开源摄取编排层。">
+<link rel="canonical" href="https://adg.chenshi.ai/">
+<meta property="og:type" content="website">
+<meta property="og:title" content="ADG · Agent Data Gateway —— 数据处理，是第一关">
+<meta property="og:description" content="让 Agent 获得可信、完整、可追溯的数据输入。面向法律人与专业服务者的开源摄取编排层。">
+<meta property="og:url" content="https://adg.chenshi.ai/">
+<meta property="og:image" content="https://adg.chenshi.ai/assets/adg-promo-poster.jpg">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="assets/adg-promo-poster.jpg" type="image/jpeg">
+<link rel="stylesheet" href="assets/style.css">
+</head>
+<body>
+<nav class="fnav" aria-label="页面导航">
+  <a href="#top" class="brand">ADG</a>
+  <a href="#pain">痛点</a><a href="#gate">第一关</a><a href="#pipe">管线</a><a href="#film">宣传片</a><a href="#start">上手</a><a href="#team">团队</a>
+  <a class="gh" href="https://github.com/CSlawyer1985/agent-data-gateway" target="_blank" rel="noopener">GitHub ↗</a>
+</nav>
+
+<header id="top" class="hero">
+  <canvas id="heroCanvas" aria-hidden="true"></canvas>
+  <div class="hero-inner">
+    <p class="kicker mono">AGENT DATA GATEWAY · v0.2.4 · OPEN SOURCE</p>
+    <h1><span class="l1">数据处理，</span><span class="l2">是第一关。</span></h1>
+    <p class="lead">模型读不全，再强的模型也没有用。<br>ADG 把一个格式极杂的案件材料包，<b>可靠地</b>变成 Agent 可消费、可追溯、可信的数据。</p>
+    <div class="cta">
+      <a class="btn primary" href="#film">▶ 看 80 秒宣传片</a>
+      <a class="btn" href="#start">三条命令上手</a>
+    </div>
+    <p class="scrollhint mono">向下滚动 · 看混乱如何被整理 ↓</p>
+  </div>
+</header>
+
+<section id="pain" class="sec">
+  <div class="wrap">
+    <p class="eyebrow mono">01 · THE PAIN</p>
+    <h2>程序员的数据很简单，<br><em>专业服务者的数据极其复杂。</em></h2>
+    <div class="versus reveal">
+      <div class="vs-col coder">
+        <h3>程序员每天面对的</h3>
+        <pre class="mono">def parse(x):
+    return json.loads(x)
+# README.md
+{"id": 1, "ok": true}</pre>
+        <p>纯文本、代码、结构清晰——今天的 AI 产品大多为此而生。</p>
+      </div>
+      <div class="vs-mid mono">VS</div>
+      <div class="vs-col lawyer">
+        <h3>律师每天面对的</h3>
+        <div class="chips" id="painChips"></div>
+        <p>PDF 扫描件、带批注修订的 docx、财务表、聊天记录、邮件及附件、音视频、工程图纸、压缩包……</p>
+      </div>
+    </div>
+    <h3 class="sub reveal">Agent 最大的问题不是不会分析，而是<b>无法可靠地知道自己是否已完整读取全部材料</b>。</h3>
+    <ul class="fails">
+      <li class="reveal"><b>文件遗漏</b><span>压缩包未展开、附件未拆出</span><i>→ 分析建立在残缺事实上</i></li>
+      <li class="reveal"><b>OCR 未执行</b><span>扫描件当成空文件</span><i>→ “无文字层”被误读为“无内容”</i></li>
+      <li class="reveal"><b>表格读取失败</b><span>多工作表、合并单元格</span><i>→ 关键数字缺失无人知晓</i></li>
+      <li class="reveal"><b>静默跳过</b><span>解析失败无人报告</span><i>→ 无法区分“读全了”与“读不了”</i></li>
+      <li class="reveal"><b>来源无法回溯</b><span>没有页码、坐标、单元格</span><i>→ 引用时找不到原文位置</i></li>
+      <li class="reveal"><b>悄悄降级</b><span>解析器换成低质量兜底</span><i>→ 报告看起来正常，实际不可引用</i></li>
+    </ul>
+  </div>
+</section>
+
+<section id="gate" class="sec dark">
+  <div class="wrap">
+    <p class="eyebrow mono">02 · THE FIRST GATE</p>
+    <h2>同一份材料，<em>过没过第一关</em>，天差地别。</h2>
+    <p class="note">拖动中间的闸门。左边是把材料包直接丢给模型时常见的情况，右边是 ADG 处理后交给 Agent 的样子。（示意，内容为演示用样例）</p>
+    <div class="compare" id="compare">
+      <div class="pane raw">
+        <div class="pane-h mono">✕ 未经处理 · 直接喂给模型</div>
+        <div class="rawtxt mono" id="rawTxt"></div>
+      </div>
+      <div class="pane adg" id="adgPane">
+        <div class="pane-h mono">✓ 经过 ADG · Agent-ready</div>
+        <div class="items">
+          <div class="it"><span class="f">证据包.7z</span><span class="tag ok">expand</span><span class="m">安全展开 → 12 个成员已入账</span></div>
+          <div class="it"><span class="f">扫描合同.pdf</span><span class="tag ok">mineru · pdf_render</span><span class="m">⌖ p.3 · bbox(412,288) “保证期间为……”</span></div>
+          <div class="it"><span class="f">财务账.xlsx</span><span class="tag ok">xlsx_lite</span><span class="m">⌖ Sheet2!C7 = 1,280,000.00</span></div>
+          <div class="it"><span class="f">往来邮件.msg</span><span class="tag ok">extract_msg</span><span class="m">附件 2 个已拆出并单独解析</span></div>
+          <div class="it"><span class="f">监控录像.mp4</span><span class="tag ok">video_frames · whisper</span><span class="m">⌖ 00:03:12 时间码锚点</span></div>
+          <div class="it"><span class="f">修订稿.docx</span><span class="tag ok">docx_lite · officecli</span><span class="m">⌖ /body/p[3] 批注与修订挂回段落</span></div>
+          <div class="it warn"><span class="f">论文.caj</span><span class="tag bad">unresolved</span><span class="m">知网专有格式，无开源解析器 → 显性报告原因与建议</span></div>
+          <div class="sum mono">all_items_accounted = true · quotable 逐条标注 · exit 1 = 完成但有未读全项</div>
+        </div>
+      </div>
+      <div class="gate-handle" id="gateHandle" role="slider" tabindex="0" aria-label="对比闸门" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"><span>第一关</span></div>
+    </div>
+  </div>
+</section>
+
+<section id="pipe" class="sec">
+  <div class="wrap">
+    <p class="eyebrow mono">03 · HOW ADG WORKS</p>
+    <h2>不自研 parser，<em>做编排层</em>：<br>让最合适的工具处理最合适的材料。</h2>
+    <p class="note">点选一种材料，看它在 ADG 里走过的路。</p>
+    <div class="ftypes" id="ftypes"></div>
+    <div class="stages" id="stages"></div>
+    <div class="route" id="route">
+      <div class="route-l"><div class="mono k">触发条件</div><div id="rCond"></div></div>
+      <div class="route-l"><div class="mono k">工具链（降级链）</div><div id="rChain" class="mono"></div></div>
+      <div class="route-l"><div class="mono k">产物锚点</div><div id="rAnchor" class="mono"></div></div>
+    </div>
+    <p class="fine">实际调度与总表共用 <code>gateway.routing.ROUTE_RULES</code>，用 <code>adg routes</code> 查看全部；某个 worker 在你机器上是否可用，以 <code>adg check</code> 为准。</p>
+  </div>
+</section>
+
+<section id="value" class="sec dark">
+  <div class="wrap">
+    <p class="eyebrow mono">04 · WHAT YOU GET</p>
+    <h2>核心承诺：<em>不假装成功。</em></h2>
+    <div class="grid">
+      <article class="card reveal"><h4>完整入账</h4><p>递归发现 + 压缩包/邮件安全展开，每个文件必有 item 或排除记录。“读全了”是可验证的事实。</p></article>
+      <article class="card reveal"><h4>失败显性化</h4><p>读不了的文件进 <code>unresolved_items</code>，带阶段、原因与建议。本地解决不了就显性失败，绝不静默降质。</p></article>
+      <article class="card reveal"><h4>八维质量 + 五旗标</h4><p>发现/类型/文本/版面/OCR/附件/元数据/锚定；可检索/可提取/可引用/版面敏感/真伪鉴定——“能检索 ≠ 能引用”。</p></article>
+      <article class="card reveal"><h4>来源锚点</h4><p>页码、坐标、表格单元、时间码、字段，元素级定位。<code>adg anchor</code> 把命中回溯到原件位置。</p></article>
+      <article class="card reveal"><h4>不可信输入安全模型</h4><p>ZIP bomb、路径穿越、符号链接逃逸、宏、PDF JavaScript、worker 资源耗尽，第一版即内置，拦截显性记录。</p></article>
+      <article class="card reveal"><h4>本地最优 · 隐私</h4><p>默认全链路本地处理；产物只含包内相对路径，输出前 scrub 兜底清洗，客户秘密不出本机。</p></article>
+      <article class="card reveal"><h4>处理谱系 · 三身份</h4><p><code>source_id</code> / <code>rendition_id</code> / <code>run_id</code>，每次解析记录工具、退出码与哈希，链式可查。</p></article>
+      <article class="card reveal"><h4>给 Agent 用</h4><p>Claude Code、Codex 等编码 Agent 经命令行调用，加 <code>--json</code> 即结构化结果；命中带 <code>quotable</code> 与未读全提示。</p></article>
+    </div>
+    <div class="stats" id="stats">
+      <div><b data-n="24">0</b><span>外部 worker 适配器</span></div>
+      <div><b data-n="11">0</b><span>Legal Pack 轻量解析器</span></div>
+      <div><b data-n="97.6" data-d="1" data-s="%">0</b><span>真实混合材料包覆盖率</span></div>
+      <div><b data-n="9777">0</b><span>条图纸文字带图层/句柄锚点</span></div>
+    </div>
+    <p class="fine">数据来自仓库 README 与 CHANGELOG：真实混合材料包 23 个物理文件 → 展开/派生后 41 items，仅剩 CAJ 1 项未解决；<code>adg verify</code> 27/28 通过、0 失败（1 项为环境依赖跳过）。</p>
+  </div>
+</section>
+
+<section id="film" class="sec film">
+  <div class="wrap">
+    <p class="eyebrow mono">05 · THE FILM</p>
+    <h2>80 秒，看懂 ADG。</h2>
+    <div class="video-frame">
+      <video id="promo" controls playsinline preload="metadata" poster="assets/adg-promo-poster.jpg">
+        <source src="assets/adg-promo.mp4" type="video/mp4">
+        你的浏览器不支持视频播放，<a href="assets/adg-promo.mp4">点此下载</a>。
+      </video>
+    </div>
+  </div>
+</section>
+
+<section id="start" class="sec dark">
+  <div class="wrap">
+    <p class="eyebrow mono">06 · QUICK START</p>
+    <h2>三条命令，<em>跑通一个材料包。</em></h2>
+    <div class="term">
+      <div class="term-bar"><i></i><i></i><i></i><span class="mono">zsh — adg</span><button class="copy" id="copyAll" title="复制可直接执行的命令；anchor 示例需替换 element_id 后单独运行">复制命令</button></div>
+      <pre class="mono" id="termBody"></pre>
+    </div>
+    <p class="fine">需要 Python 3.10+。复制命令不含需替换 <code>element_id</code> 的 anchor 示例。包已发布到 PyPI；也可 <code>python3 -m pip install agent-data-gateway</code>。重型 worker（Whisper、PaddleOCR、Docling、MinerU 等）不进一键档，按需 <code>adg setup --worker &lt;名称&gt;</code>。exit code 三态：0 = pass / 1 = 完成但有未读全项 / 2 = fail。</p>
+  </div>
+</section>
+
+<section id="team" class="sec">
+  <div class="wrap">
+    <p class="eyebrow mono">07 · BUILT BY</p>
+    <h2>两个人，<em>把第一关做扎实。</em></h2>
+    <div class="team">
+      <div class="person reveal">
+        <div class="avatar cs"><img src="assets/cs-avatar.jpg" alt="陈石的 GitHub 头像" width="150" height="150" loading="lazy"></div>
+        <h3>陈石</h3>
+        <p class="role">律师 · AI Builder · 共同主导</p>
+        <p>站在专业服务者一侧，提出问题：Agent 不缺分析能力，缺的是可靠读全材料。</p>
+        <p class="links"><a href="https://github.com/CSlawyer1985" target="_blank" rel="noopener">GitHub @CSlawyer1985</a> · <a href="https://chenshi.ai" target="_blank" rel="noopener">chenshi.ai</a></p>
+      </div>
+      <div class="x mono">×</div>
+      <div class="person reveal">
+        <div class="avatar luke"><img src="assets/luke-avatar.jpg" alt="Luke 的 GitHub 头像" width="150" height="150" loading="lazy"></div>
+        <h3>Luke</h3>
+        <p class="role">共同主导</p>
+        <p>与陈石一起主导 ADG 的设计与开发。</p>
+        <p class="links"><a href="https://github.com/luke1879012" target="_blank" rel="noopener">GitHub @luke1879012</a></p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="join" class="sec join">
+  <div class="wrap">
+    <p class="eyebrow mono">08 · JOIN US</p>
+    <h2>欢迎开发者参与，<br><em>一起把这个项目打造得更好。</em></h2>
+    <div class="joingrid">
+      <a class="jcard" href="https://github.com/CSlawyer1985/agent-data-gateway/issues" target="_blank" rel="noopener"><b>提 Issue</b><span>报告读不全的格式、误报与真实场景</span></a>
+      <a class="jcard" href="https://github.com/CSlawyer1985/agent-data-gateway/pulls" target="_blank" rel="noopener"><b>提 PR</b><span>接入新 worker、补路由规则、改进锚点</span></a>
+      <a class="jcard" href="https://github.com/CSlawyer1985/agent-data-gateway" target="_blank" rel="noopener"><b>Star / Fork</b><span>github.com/CSlawyer1985/agent-data-gateway</span></a>
+    </div>
+    <p class="fine">好的切入点：Extended Packs（CAD 深入 / GIS / DICOM）、远程 worker 后端与云端模型路由（设计预留）、资料利用率增益轨（设计已定稿、实现未开始）。读代码前建议先看 <code>docs/adr/</code>。</p>
+    <div class="license">
+      <div class="lic-badge mono">MIT</div>
+      <p>ADG 编排器以宽松的 <a href="https://github.com/CSlawyer1985/agent-data-gateway/blob/main/LICENSE"><b>MIT License</b></a> 开源：可自由使用、修改、分发与商用，保留版权与许可声明即可。部分 worker 调用的外部工具为 GPL/AGPL（如 extract-msg、LibreDWG、MinerU），它们以独立进程隔离调用、不链入编排器，许可以各 <code>workers/*/worker.json</code> 的 <code>license</code> 字段为准。</p>
+    </div>
+  </div>
+</section>
+
+<footer class="foot mono">ADG · Agent Data Gateway · v0.2.4 · <a href="https://github.com/CSlawyer1985">陈石</a> &amp; <a href="https://github.com/luke1879012">Luke</a> · <a href="https://github.com/CSlawyer1985/agent-data-gateway">GitHub</a></footer>
+<script src="assets/main.js"></script>
+</body>
+</html>

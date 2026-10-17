@@ -8,7 +8,8 @@ version = "0.2.4"
 description = "Agent Data Gateway — 让 Agent 获得可信、完整、可追溯的数据输入（摄取编排层，不是 parser）"
 readme = "README.md"
 requires-python = ">=3.10"
-license = "Apache-2.0"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "ADG" }]
 keywords = ["ingestion", "agent", "evidence", "legal", "pdf", "docx", "ocr"]
 classifiers = [
